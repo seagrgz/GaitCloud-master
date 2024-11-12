@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 import torch
 from torch.cuda.amp import GradScaler, autocast
 
-sys.path.append('/home/sx-zhang/work/CNN-LSTM-master')
-sys.path.append('/home/sx-zhang/work/CNN-LSTM-master/util')
+sys.path.append('/home/sx-zhang/work/GaitCloud-master')
+sys.path.append('/home/sx-zhang/work/GaitCloud-master/util')
 from util import config
 from util.gait_database import GaitDataset
 import models
@@ -188,13 +188,15 @@ def draw_distribution(results, results_view, timestamp):
         accuracy = [results[attr][name]['accuracy'] for name in x_labels]
         count = [results[attr][name]['count'] for name in x_labels]
         fig, ax = plt.subplots(figsize=(6,4), dpi=300)
-        ax.bar(x_locs-width/2, accuracy, width, label='Accuracy', color='tab:blue')
-        ax.set_xticks(x_locs, x_labels, fontsize=4)
+        ax.bar(x_locs-width/2, accuracy, width, label='Accuracy', color='tab:blue', zorder=2)
+        addlabels(x_locs, width, accuracy)
         ax.set_ylabel('Accuracy')
         ax.set_ylim(0,1)
-        addlabels(x_locs, width, accuracy)
+        ax.set_xticks(x_locs, x_labels, fontsize=4)
+        ax.set_zorder(1)
+        ax.set_frame_on(False)
         ax_c = ax.twinx()
-        ax_c.bar(x_locs+width/2, count, width, label='Count', color='tab:orange')
+        ax_c.bar(x_locs+width/2, count, width, label='Count', color='tab:orange', zorder=2)
         ax_c.set_ylabel('Count')
         fig.legend()
         plt.savefig('{}/analysis/{}.png'.format(timestamp, attr))
@@ -220,7 +222,7 @@ def draw_distribution(results, results_view, timestamp):
 
 def addlabels(locs, width, y):
     for i in range(len(locs)):
-        plt.text(locs[i]-width/2, y[i], round(y[i], 4), ha='center', fontsize=8)
+        plt.text(locs[i]-width/2, y[i], round(y[i], 4), ha='center', fontsize=8, zorder=10)
 
 def draw_robustness(var_accu, view_accu, timestamp):
     fig = plt.figure(figsize = (6,4),dpi=300) 

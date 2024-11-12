@@ -108,10 +108,9 @@ def assign_ID(frame, ch_cal):
     return frame, Id
 
 def frame_dilution(frame, Id, stride=2):
-    ground = min(frame[:,2])
     indices = np.nonzero(Id%stride==0)[0]
     diluted = frame[indices]
-    return diluted, Id[indices], ground
+    return diluted, Id[indices]
 
 def add_noise(sample, sigma):
     assert sample.shape[-1] == 3, 'expect sample have 3 channel but got {}'.format(sample.shape[-1])

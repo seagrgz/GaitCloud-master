@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import time
-from models.module import ConvBlock, FlatIn, LayerCNN, ScaleFusionCNN, HPP, ConvHPP, SeparateFCs, SeparateBNNecks, LossAggregator
+from models.module import ConvBlock, FlatIn, LayerCNN, ScaleFusionCNN, HPP, SPP, ConvHPP, SeparateFCs, SeparateBNNecks, LossAggregator
 
 class TestAll(nn.Module):
     def __init__(self, args, in_size):
@@ -18,8 +18,16 @@ class TestAll(nn.Module):
         self.enc_2 = ConvBlock([64,128])
         self.enc_3 = ConvBlock([128,256])
         self.enc_4 = ConvBlock([256,512], stride=1)
-        self.FCs = SeparateFCs()
-        self.HPP = ConvHPP()
+        
+        #self.HPP = ConvHPP()
+        self.HPP = HPP()
+        #self.FCs = SeparateFCs()
+        #self.BNNecks = SeparateBNNecks(class_num=len(args.target))
+        
+        #fusion pooling
+        self.SPP = SPP()
+        self.FCs = SeparateFCs(parts_num=self.HPP.bin_num[0]+self.SPP.bin_num[0])
+        self.BNNecks = SeparateBNNecks(parts_num=self.HPP.bin_num[0]+self.SPP.bin_num[0], class_num=len(args.target))
 
         #self.HPP = HPP()
 
@@ -32,41 +40,44 @@ class TestAll(nn.Module):
         #self.HPP = ConvHPP(channel=512)
         #self.HPP = HPP()
 
-        self.BNNecks = SeparateBNNecks(class_num=len(args.target))
         self.mergeloss = LossAggregator(margin=0.2, scale=1, lamda=1)
 
         self.embeddings = {}
 
-    def forward(self, x, labels=None, training=True, positions=None, **kwargs):
+    def forward(self, x, labels=None, training=True, positions=None, visual=False, **kwargs):
         #st = time.time()
         x = self.layerencoder(x)
-        self.embeddings['layer_out'] = x.detach().to(torch.float).to('cpu')
+        if visual:
+            self.embeddings['layer_out'] = x.detach().to(torch.float).to('cpu')
         #layer_t = time.time()
 
         #x = self.scalencoder(x, positions.round())
         #scale_t = time.time()
 
         x = self.enc_1(x)
-        self.embeddings['res1_out'] = x.detach().to(torch.float).to('cpu')
+        if visual:
+            self.embeddings['res1_out'] = x.detach().to(torch.float).to('cpu')
         x = self.enc_2(x)
-        self.embeddings['res2_out'] = x.detach().to(torch.float).to('cpu')
+        if visual:
+            self.embeddings['res2_out'] = x.detach().to(torch.float).to('cpu')
         x = self.enc_3(x)
-        self.embeddings['res3_out'] = x.detach().to(torch.float).to('cpu')
+        if visual:
+            self.embeddings['res3_out'] = x.detach().to(torch.float).to('cpu')
         out = self.enc_4(x)
-        self.embeddings['encoder_out'] = out.detach().to(torch.float).to('cpu')
+        if visual:
+            self.embeddings['encoder_out'] = out.detach().to(torch.float).to('cpu')
 
         #out = self.encoder(x)
         #encode_t = time.tie()
         #print(out.shape)
 
         #Horizontal PyramidPooling
-        feat = self.HPP(out)
-        self.embeddings['hpp_out'] = feat.detach().to(torch.float).to('cpu')
+        feat = torch.cat([self.HPP(out), self.SPP(out)], dim=-1)
+        #feat = self.HPP(out)
         #hpp_t = time.time()
 
         #dense
         embed_tp = self.FCs(feat)
-        self.embeddings['dense_out'] = embed_tp.detach().to(torch.float).to('cpu')
         #embed_t = time.time()
 
         if training:

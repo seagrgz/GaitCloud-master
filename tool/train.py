@@ -189,8 +189,8 @@ def main_worker(gpu, ngpus_per_node, argss, data_root, namespace, splits, config
     args = argss
     if args.load_checkpoint:
         print('Loading checkpoint [{}]'.format(args.checkpoint_timestamp))
-        result = np.load('/home/sx-zhang/work/CNN-LSTM-master/[{}]/[{}].npy'.format(args.checkpoint_timestamp, args.checkpoint_timestamp), allow_pickle=True)
-        checkpoint = torch.load('/home/sx-zhang/work/CNN-LSTM-master/[{}]/checkpoint[{}].pth'.format(args.checkpoint_timestamp, args.checkpoint_timestamp), map_location=lambda storage, loc: storage.cuda())
+        result = np.load('/home/sx-zhang/work/GaitCloud-master/[{}]/[{}].npy'.format(args.checkpoint_timestamp, args.checkpoint_timestamp), allow_pickle=True)
+        checkpoint = torch.load('/home/sx-zhang/work/GaitCloud-master/[{}]/checkpoint[{}].pth'.format(args.checkpoint_timestamp, args.checkpoint_timestamp), map_location=lambda storage, loc: storage.cuda())
         accuracy_val_curve = result[0]
         accuracy_train_curve = result[1]
         loss_curve = result[2]
@@ -423,9 +423,9 @@ def metric_test(dataloaders, model, accuracy_calculator, args, device, splits, e
         with torch.no_grad():
             if args.use_bf16:
                 with autocast(dtype=torch.bfloat16):
-                    embeddings, visual_embed = model(data, labels, training=False, positions=positions, symbol=args.symbol)
+                    embeddings, visual_embed = model(data, labels, training=False, positions=positions, symbol=args.symbol, visual=(args.visual and epoch%args.visual_freq == 0))
             else:
-                embeddings, visual_embed = model(data, labels, training=False, positions=positions, symbol=args.symbol)
+                embeddings, visual_embed = model(data, labels, training=False, positions=positions, symbol=args.symbol, visual=(args.visual and epoch%args.visual_freq == 0))
         #gallery_embeddings[data_count:data_count+len(labels)] = embeddings.view(embeddings.shape[0], -1).detach()
         gallery_embeddings.append(embeddings.detach().to('cpu'))
         gallery_labels.append(labels.detach().to('cpu'))
@@ -452,9 +452,9 @@ def metric_test(dataloaders, model, accuracy_calculator, args, device, splits, e
                 with torch.no_grad():
                     if args.use_bf16:
                         with autocast(dtype=torch.bfloat16):
-                            embeddings, visual_embed = model(data, labels, training=False, positions=positions, symbol=args.symbol)
+                            embeddings, visual_embed = model(data, labels, training=False, positions=positions, symbol=args.symbol, visual=(args.visual and epoch%args.visual_freq == 0))
                     else:
-                        embeddings, visual_embed = model(data, labels, training=False, positions=positions, symbol=args.symbol)
+                        embeddings, visual_embed = model(data, labels, training=False, positions=positions, symbol=args.symbol, visual=(args.visual and epoch%args.visual_freq == 0))
                 #t_embeddings[data_count:data_count+len(labels)] = embeddings.view(embeddings.shape[0], -1).detach()
                 t_embeddings.append(embeddings.detach().to('cpu'))
                 t_labels.append(labels.detach().to('cpu'))
@@ -464,6 +464,7 @@ def metric_test(dataloaders, model, accuracy_calculator, args, device, splits, e
                     for name in (set(metainfo[1]) & set(args.visual_names)):
                         print('record {}'.format(name))
                         for item in visual_embed.keys():
+                            #print(len(visual_embed[item]), len(metainfo[1]))
                             visual_record[name][item] = visual_embed[item][metainfo[1].index(name)]
 
             variance_embeddings[variance] = torch.cat(t_embeddings)
@@ -474,8 +475,7 @@ def metric_test(dataloaders, model, accuracy_calculator, args, device, splits, e
             accuracy, failed_info = accuracy_calculator.rank_1_accuracy(variance_embeddings[variance], variance_labels[variance], variance_embeddings['00-nm'], variance_labels['00-nm'], logger)
 
             #failed pair analysis
-            if epoch >= 0.9*args.epochs:
-                fail_results[variance], _ = fail_analyze(failed_info, variance_targets[variance], variance_targets['00-nm'])
+            fail_results[variance], _ = fail_analyze(failed_info, variance_targets[variance], variance_targets['00-nm'])
         else:
             #accuracy = accuracy_calculator.get_accuracy(gallery_embeddings, gallery_labels, gallery_embeddings, gallery_labels, True)["precision_at_1"]
             accuracy, _ = accuracy_calculator.rank_1_accuracy(variance_embeddings[variance], variance_labels[variance], logger=logger)
@@ -486,10 +486,10 @@ def metric_test(dataloaders, model, accuracy_calculator, args, device, splits, e
     test_embeddings = torch.cat([*variance_embeddings.values()])
     test_labels = torch.cat([*variance_labels.values()])
     #logger.info('var_end-free memory: {}'.format(get_gpu_info()[0]['memory.free']))
-    if epoch >=0.9*args.epochs:
-        with open('[{}]/fail_analysis/epoch{}.yaml'.format(args.timstamp, epoch), 'w') as f:
-            yaml.dump(fail_results, f, allow_unicode=True, default_flow_style=False)
-        f.close()
+
+    with open('[{}]/fail_analysis/epoch{}.yaml'.format(args.timestamp, epoch), 'w') as f:
+        yaml.dump(fail_results, f, allow_unicode=True, default_flow_style=False)
+    f.close()
 
     #view
     view_embeddings = {}

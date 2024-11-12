@@ -4,7 +4,7 @@ import seaborn as sn
 import pandas as pd
 import matplotlib.pyplot as plt
 
-data_name = '[2024-10-11_07:43:50.842896]'
+data_name = '[2024-10-22_10:46:23.796007]'
 variance = ['00-nm', '01-nm', 'bg', 'cl', 'cr', 'ub', 'uf', 'oc', 'nt']
 #variance = ['00-nm', '01-nm', '01-bg', '01-cl', '01-cr', '01-oc', '01-ub', 'uf', 'nt']
 view = ['_000_', '000-far', '_045_', '_090_', '090-near', '_135_', '_180_', '180-far', '_225_', '_270_', '270-far', '_315_']
@@ -13,7 +13,7 @@ view_labels = ['000°', '045°', '090°', '135°', '180°', '225°', '270°', '3
 mean_matrix_view = []
 max_matrix_view = []
 
-result = np.load('/home/sx-zhang/work/CNN-LSTM-master/{}/final.npy'.format(data_name), allow_pickle=True)
+result = np.load('/home/sx-zhang/work/GaitCloud-master/{}/final.npy'.format(data_name), allow_pickle=True)
 accuracy_val = result[0]
 accuracy_train = result[1]
 if len(result) > 2:

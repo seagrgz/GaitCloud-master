@@ -116,7 +116,6 @@ def get_dir(data, st, ed, view):
         alpha = sum(filtered)/len(filtered)
     else:
         alpha = np.random.uniform(0, 2*np.pi)
-    print(alpha)
     return -alpha
 
 def random_head_sample(seq, frame_num):
@@ -147,13 +146,13 @@ def create_SUSTech(dst, frame_num, split=None, viewpoint=None, dilution=1, noise
     global w, h, l, tfusion
     if split==None and viewpoint==None:
         split, viewpoint = get_parser()
-    src = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-pkl'
+    src = 'SUSTech1K-Released-pkl'
     sample_list = sorted(os.listdir(src)) 
     sample_num = len(sample_list)
     enable_list = {}
     enable_start = 0
     state = 0
-    ch_cal = np.load('/home/sx-zhang/SUSTech1K/elevation_128.npy')
+    ch_cal = np.load('elevation_128.npy')
 
     for sample in sample_list:
         sample_root = os.path.join(src, sample)
@@ -177,13 +176,14 @@ def create_SUSTech(dst, frame_num, split=None, viewpoint=None, dilution=1, noise
                                 if state == 0:
                                     enable_start = iframe
                                     alpha = get_dir(data, iframe, min(iframe+20, sample_len-1), viewpoint)
+                                    ground = min([min(frame[:,2]) for frame in data[iframe:]])
+                                    print('Rotation: {}, Ground: {}'.format(alpha, ground))
                                     state = 1
                                 if dilution > 1:
                                     data_frame, Id = assign_ID(data[iframe], ch_cal)
-                                    data_frame, Id, ground = frame_dilution(data_frame, Id, stride=dilution)
+                                    data_frame, Id = frame_dilution(data_frame, Id, stride=dilution)
                                 else:
                                     data_frame = data[iframe]
-                                    ground = min(data_frame[:,2])
                                 if len(data_frame) > 0:
                                     if noise > 0:
                                         data_frame = add_noise(data_frame, noise)

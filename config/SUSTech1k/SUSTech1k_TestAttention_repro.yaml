@@ -2,7 +2,7 @@ DATA:
   #data_name: gait_database
   data_name: SUSTech1K
   #data_root: dataset/gait_database/dataset{}/{}
-  data_root: /home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20/tmp #voxelized data
+  data_root: dataset/SUSTech1K/SUSTech1K-Released-voxel.20/tmp #voxelized data
   #data_root: /home/sx-zhang/SUSTech1K/SUSTech1K-Released-baseline #lidargait
   data_split: SUS #dir1~4, combined, SUS
   frame_size:  #10,15,_voxel (_voxel if not using temporal representation) discard
@@ -18,7 +18,7 @@ DATA:
   datatype: half #double, float, half
   
   reload_data: True
-  identifier: A_
+  identifier: T_
   use_gpu: True
   use_metric: True
   #use_variation: True
@@ -38,7 +38,7 @@ TRAIN:
   workers: 8  # data loader workers
   batch_size: 8 # batch size for training
   batch_size_test: 64
-  base_lr: 0.05
+  base_lr: 0.1
   epochs: 100
   start_epoch: 0
   step_epoch: 30

@@ -252,6 +252,28 @@ class HPP():
             features.append(z)
         return torch.cat(features, -1)
 
+class SPP():
+    """
+        Side Pyramid Pooling
+    """
+
+    def __init__(self, bin_num=[10]):
+        self.bin_num = bin_num
+
+    def __call__(self, x):
+        """
+            x  : [n, c, h, w, l]
+            ret: [n, c, p] 
+        """
+        n, c = x.size()[:2]
+        x = torch.permute(x, (0,1,3,4,2)).contiguous() #[n, c, w, l, h]
+        features = []
+        for b in self.bin_num:
+            z = x.view(n, c, b, -1)
+            z = z.mean(-1) + z.max(-1)[0]
+            features.append(z)
+        return torch.cat(features, -1)
+
 class ConvHPP(nn.Module):
     def __init__(self, bin_num=[16], channel=512, window_size=[1,10,10]):
         feat_h = 16

@@ -2,7 +2,7 @@ DATA:
   #data_name: gait_database
   data_name: SUSTech1K
   #data_root: dataset/gait_database/dataset{}/{}
-  data_root: /home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20/tmp #voxelized data
+  data_root: dataset/SUSTech1K/SUSTech1K-Released-voxel.20/tmp #voxelized data
   #data_root: /home/sx-zhang/SUSTech1K/SUSTech1K-Released-baseline #lidargait
   data_split: SUS #dir1~4, combined, SUS
   frame_size:  #10,15,_voxel (_voxel if not using temporal representation) discard

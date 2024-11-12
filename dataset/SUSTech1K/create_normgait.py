@@ -21,6 +21,6 @@ def create_symb(data_root):
     return gait_symb
 
 if __name__ == '__main__':
-    data_root = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20/tmp'
+    data_root = '/home/sx-zhang/work/GaitCloud-master/dataset/SUSTech1K/SUSTech1K-Released-voxel.20/tmp'
     normalized_gait = create_symb(data_root)
     np.save(os.path.join(data_root, 'norm_gait.npy'), normalized_gait)

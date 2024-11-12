@@ -13,15 +13,15 @@ from std_msgs.msg import Header
 from sensor_msgs.msg import PointCloud2, PointField
 
 import sys
-sys.path.append('/home/sx-zhang/work/CNN-LSTM-master')
-sys.path.append('/home/sx-zhang/work/CNN-LSTM-master/util')
+sys.path.append('/home/sx-zhang/work/GaitCloud-master')
+sys.path.append('/home/sx-zhang/work/GaitCloud-master/util')
 from util.pretreatment import assign_ID, frame_voxelize, frame_rotation, frame_dilution
 from util.gait_voxelize import get_dir
 from models.module import PCA_image
 
 #sample = 371
-display_fullscene = False
-trace = True
+display_fullscene = True
+trace = False
 frame_num = 30
 ch_cali = [100, -0.01]
 w = 40
@@ -80,10 +80,7 @@ def display_raw(data_root):
             data = pickle.load(f)
         f.close()
         for iframe in range(len(data)):
-            data_frame, Id = assign_ID(data[iframe], ch_cal)
-            data_frame, Id, _ = frame_dilution(data_frame, Id, stride=8)
-            ins = np.expand_dims((np.asarray(Id)*50)%255, axis=1)
-            points = np.append(data_frame, ins, axis=1).tolist()
+            points = data[iframe].tolist()
             if trace:
                 checker.points += points
             else:
@@ -94,7 +91,7 @@ def display_raw(data_root):
         with open(data_root, 'rb') as f:
             data = pickle.load(f)
         f.close()
-        ch_cal = np.load('/home/sx-zhang/SUSTech1K/elevation_128.npy')
+        ch_cal = np.load('/home/sx-zhang/work/GaitCloud-master/dataset/SUSTech1K/elevation_128.npy')
         voxel_sample = np.zeros((w, l, h))
         #alpha = np.deg2rad(225)
         state = 0
@@ -145,6 +142,7 @@ def display_train(data_root):
     data = np.transpose(_data, (1,2,0))
     points = np.transpose(np.nonzero(data))
     checker.points = np.append(points/32, data[np.nonzero(data)][:,np.newaxis], axis=1).tolist()
+    checker.publish(data_root)
     time.sleep(0.25)
     checker.publish(data_root)
     time.sleep(0.25)
@@ -156,42 +154,43 @@ def display_array(data_root):
     sh = 10
     if len(_data.shape) == 4:
         data = np.transpose(PCA_image(_data), (1,2,0,3))
-        #bg = data[4,4,4]
-        bg = [-100, -100, -100]
+        bg = data[2,2,2]
+        #bg = [-100, -100, -100]
         print(bg)
         coors = np.transpose(np.nonzero(data.sum(axis=-1)))
         for p in coors:
             color = data[tuple(p)]
-            if (abs(color[0]-bg[0]) < sh) and (abs(color[1]-bg[1]) < sh) and (abs(color[2]-bg[2]) < sh):
+            if (abs(color[0]-bg[0]) < sh) and (abs(color[1]-bg[1]) < sh) and (abs(color[2]-bg[2]) < sh) or p[0]%38 < 2 or p[1]%38 < 2 or p[2]%62 < 2:
                 continue
             else:
                 rgb = struct.unpack('I', struct.pack('BBBB', *color.astype('uint'), 0))
                 checker.points.append(list(p/32)+list(rgb))
     else:
-        coors = np.transpose(np.nonzero(_data.sum(axis=-1)))
-        for p in coors:
-            rgb = struct.unpack('I', struct.pack('BBBB', *_data[tuple(p)].astype('uint'), 0))
-            checker.points.append(list(p/32)+[0,0]+list(rgb))
+        data = np.transpose(_data, (1,2,0))
+        coors = np.transpose(np.nonzero(data))
+        checker.points = np.append(coors/32, data[np.nonzero(data)][:,np.newaxis], axis=1).tolist()
 
     for i in range(5):
         checker.publish()
 
 if __name__ == '__main__':
     rclpy.init(args=None)
-    #data_root = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20/tmp/train/norm_gait.npy'
-    data_root = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20/045/01-cr-bg-ub_045_0288.npy'
-    display_train(data_root)
-    #data_root = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-pkl/0200/00-nm/000/00-000-LiDAR-PCDs.pkl'
-    #display_raw(data_root)
+    data_source = '/home/sx-zhang/work/GaitCloud-master/dataset/SUSTech1K/'
+    #data_root = data_source+'SUSTech1K-Released-voxel.20/tmp/train/norm_gait.npy'
+    #data_root = data_source+'SUSTech1K-Released-voxel.20/180-far/01-uf-ub_180-far_0931.npy'
+    #display_train(data_root)
+
+    data_root = data_source+'SUSTech1K-Released-pkl/0931/01-uf-ub/180-far/00-180-far-LiDAR-PCDs.pkl'
+    display_raw(data_root)
 
     #if display_fullscene:
-    #    data_root = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-pkl/0747/01-ub/270-far/00-270-far-LiDAR-PCDs.pkl'
+    #    data_root = data_source+'SUSTech1K-Released-pkl/0747/01-ub/270-far/00-270-far-LiDAR-PCDs.pkl'
     #    display_raw(data_root)
     #else:
     #    view = '270-far'
     #    split = '01-ub' #'00-nm', '01-cr', '01-bg', '01-ub', '01-nm', '01-oc', '01-cl'
-    #    sample_root = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20/tmp/probe'
-    #    data_root = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-pkl/{}/{}/{}/00-{}-LiDAR-PCDs.pkl'
+    #    sample_root = data_source+'SUSTech1K-Released-voxel.20/tmp/probe'
+    #    data_root = data_source+'SUSTech1K-Released-pkl/{}/{}/{}/00-{}-LiDAR-PCDs.pkl'
     #    sample_list = os.listdir(sample_root)
     #    direction = []
     #    for sample in sample_list:

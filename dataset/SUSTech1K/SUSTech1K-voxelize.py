@@ -6,7 +6,7 @@ import pickle
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
 
-sys.path.append('/home/sx-zhang/work/CNN-LSTM-master/util/')
+sys.path.append('/home/sx-zhang/work/GaitCloud-master/util/')
 from gait_voxelize import create_SUSTech, find_minimum_cluster
 
 split_list = ['nt', 'cr', 'bg', 'ub', 'oc', 'cl', 'uf', '01-nm', '00-nm']
@@ -38,7 +38,7 @@ def get_info(frame):
 
 def briefing():
     sub_list = ['delta_x','delta_y','delta_z','num_p','delta_fx','delta_fy','delta_fz','num_fp']
-    src = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-pkl'
+    src = '/home/sx-zhang/work/GaitCloud-master/dataset/SUSTech1K/SUSTech1K-Released-pkl'
     SUSTech1K_info = [] #[T, 2, 4]
     frame_num = []
     frames = 0
@@ -125,4 +125,4 @@ if __name__ == '__main__':
     #log_file.close()
     #for noise in [0.005,0.015,0.025,0.035,0.045,0.055,0.065,0.075,0.085,0.095]:
     #    voxelize('/home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20dev{}'.format(noise), frame_num=20, dilution=1, noise=noise)
-    voxelize('/home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.temporal_nonrotate', frame_num=10, dilution=1, noise=0)
+    voxelize('/home/sx-zhang/work/GaitCloud-master/dataset/SUSTech1K/SUSTech1K-Released-voxel.20', frame_num=20, dilution=1, noise=0)

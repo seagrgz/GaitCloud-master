@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import time
-from models.module import ConvBlock, FlatIn, LayerCNN, ScaleFusionCNN, HPP, SPP, ConvHPP, SeparateFCs, SeparateBNNecks, LossAggregator
+from models.module import ConvBlock, FlatIn, LayerCNN, ScaleFusionCNN, HPP, SPP, ConvHPP, SeparateFCs, SeparateBNNecks, LinearProjection, LossAggregator
 
 class TestAll(nn.Module):
     def __init__(self, args, in_size):
@@ -19,18 +19,26 @@ class TestAll(nn.Module):
         self.enc_3 = ConvBlock([128,256])
         self.enc_4 = ConvBlock([256,512], stride=1)
         
-        #self.HPP = ConvHPP()
-        self.HPP = HPP()
-        #self.FCs = SeparateFCs()
-        #self.BNNecks = SeparateBNNecks(class_num=len(args.target))
-        
-        #fusion pooling
-        self.SPP = SPP()
-        self.FCs = SeparateFCs(parts_num=self.HPP.bin_num[0]+self.SPP.bin_num[0])
-        self.BNNecks = SeparateBNNecks(parts_num=self.HPP.bin_num[0]+self.SPP.bin_num[0], class_num=len(args.target))
-
+        self.HPP = ConvHPP()
         #self.HPP = HPP()
+        self.FCs = SeparateFCs()
+        self.BNNecks = SeparateBNNecks(class_num=len(args.target))
+        
+        #fusion pooling feat_cat
+        #self.HPP = HPP()
+        #self.SPP = SPP()
+        #self.FCs = SeparateFCs(parts_num=self.HPP.bin_num[0]+self.SPP.bin_num[0])
+        #self.BNNecks = SeparateBNNecks(parts_num=self.HPP.bin_num[0]+self.SPP.bin_num[0], class_num=len(args.target))
 
+        #fusion pooling ch_cat
+        #self.SPP = SPP()
+        #self.HPP = HPP()
+        #self.linear = LinearProjection()
+        #self.norm = nn.BatchNorm1d(512)
+        #self.FCs = SeparateFCs(in_channels=1024)
+        #self.BNNecks = SeparateBNNecks(class_num=len(args.target))
+
+        #for channel num. is not 512
         #self.encoder = nn.Sequential(
         #        #ConvBlock([64,64], stride=1),
         #        ConvBlock([64,128]),
@@ -41,7 +49,6 @@ class TestAll(nn.Module):
         #self.HPP = HPP()
 
         self.mergeloss = LossAggregator(margin=0.2, scale=1, lamda=1)
-
         self.embeddings = {}
 
     def forward(self, x, labels=None, training=True, positions=None, visual=False, **kwargs):
@@ -72,8 +79,15 @@ class TestAll(nn.Module):
         #print(out.shape)
 
         #Horizontal PyramidPooling
-        feat = torch.cat([self.HPP(out), self.SPP(out)], dim=-1)
-        #feat = self.HPP(out)
+        #feat = torch.cat([self.HPP(out), self.SPP(out)], dim=-1) #feat_cat SPP
+
+        #ch_cat SPP
+        #side_feat = self.linear(self.SPP(out)) #[n, c, p]
+        #side_feat = self.norm(side_feat)
+        #feat = torch.cat([self.HPP(out), side_feat], dim=1) #feat_cat SPP
+        #ch_cat SPP
+
+        feat = self.HPP(out)
         #hpp_t = time.time()
 
         #dense

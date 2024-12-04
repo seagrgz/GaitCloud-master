@@ -13,16 +13,16 @@ from std_msgs.msg import Header
 from sensor_msgs.msg import PointCloud2, PointField
 
 import sys
-sys.path.append('/home/sx-zhang/work/GaitCloud-master')
-sys.path.append('/home/sx-zhang/work/GaitCloud-master/util')
-from util.pretreatment import assign_ID, frame_voxelize, frame_rotation, frame_dilution
+sys.path.append('/home/work/sx-zhang/GaitCloud-master')
+sys.path.append('/home/work/sx-zhang/GaitCloud-master/util')
+from util.pretreatment import assign_ID, frame_voxelize, frame_rotation, frame_dilution, frame_clean, frame_clean
 from util.gait_voxelize import get_dir
 from models.module import PCA_image
 
 #sample = 371
 display_fullscene = True
-trace = False
-frame_num = 30
+trace = True
+frame_num = 20
 ch_cali = [100, -0.01]
 w = 40
 l = 40
@@ -71,39 +71,72 @@ class FrameChecker(Node):
         self.pub.publish(pubdata)
         print('publishing ', name, len(self.points))
 
-#raw sample located at SUSTech1K-Released-pkl
+def load_raw(data_root):
+    with open(data_root, 'rb') as f:
+        data = pickle.load(f)
+    f.close()
+    return data
+
+def save_repaired(data, data_root):    
+    with open(data_root, 'wb') as f:
+        pickle.dump(data, f)
+    f.close()
+                       
+#raw sample located     at SUSTech1K-Released-pkl
 def display_raw(data_root):
     global h, w, l, frame_num, display_fullscene, trace
     checker = FrameChecker(display_fullscene)
     if display_fullscene:
-        with open(data_root, 'rb') as f:
-            data = pickle.load(f)
-        f.close()
+        data = load_raw(data_root)
+        sample_buff = []
         for iframe in range(len(data)):
-            points = data[iframe].tolist()
-            if trace:
-                checker.points += points
-            else:
-                checker.points = points
-            checker.publish()
-            time.sleep(0.1)
+            #print(iframe)
+
+            #data[iframe] = frame_clean(data[iframe])
+            #data[iframe] = data[iframe][data[iframe][:,1]>1]
+            #if iframe < 30:
+            #    data[iframe] = data[iframe][data[iframe][:,1]<1.3]
+            #else:
+            #    data[iframe] = data[iframe][data[iframe][:,1]<2]
+            #if iframe > 37:
+            #    data[iframe] = data[iframe][data[iframe][:,0]>-10.5]
+            #print(np.mean(data[iframe], 0))
+            #if iframe > 50:
+            #sample_buff.append(data[iframe])
+
+            if iframe < 9999:
+                points = data[iframe].tolist()
+                if trace:
+                    checker.points += points
+                else:
+                    checker.points = points
+                checker.publish(iframe)
+                time.sleep(0.1)
+        if sample_buff != []:
+            print('Sample repaired')
+            save_repaired(sample_buff, data_root)
+        else:
+            print('Sample plot complete')
     else:
         with open(data_root, 'rb') as f:
             data = pickle.load(f)
         f.close()
-        ch_cal = np.load('/home/sx-zhang/work/GaitCloud-master/dataset/SUSTech1K/elevation_128.npy')
+        ch_cal = np.load('elevation_128.npy')
         voxel_sample = np.zeros((w, l, h))
         #alpha = np.deg2rad(225)
         state = 0
         offset = 0
         for iframe in range(len(data)):
+            data[iframe] = frame_clean(data[iframe])
+        for iframe in range(len(data)):
             st = time.time()
             data_frame, Id = assign_ID(data[iframe], ch_cal)
-            print(time.time()-st)
-            data_frame, Id, ground = frame_dilution(data_frame, Id, stride=8)
+            #print(time.time()-st)
+            #data_frame, Id, ground = frame_dilution(data_frame, Id, stride=1)
             ins = np.expand_dims((np.asarray(Id)*50)%255, axis=1)
             if state == 0:
                 alpha = get_dir(data, iframe, min(iframe+20, len(data)-1), '000')
+                ground = min([min(frame[:,2]) for frame in data[iframe:]])
                 print(np.rad2deg(alpha))
                 state = 1
             if len(data_frame) > 0:
@@ -119,9 +152,9 @@ def display_raw(data_root):
                     offset += 16
                 else:
                     checker.points = np.append(points, [[1]]*len(points), axis=1).tolist()
-                time.sleep(0.5)
+                time.sleep(0.05)
                 checker.publish()
-                time.sleep(0.5)
+                time.sleep(0.05)
 
         #sample_points = []
         #for z in range(h):
@@ -151,16 +184,16 @@ def display_train(data_root):
 def display_array(data_root):
     checker = VisualArray()
     _data = np.load(data_root)
-    sh = 10
+    sh = 40
     if len(_data.shape) == 4:
         data = np.transpose(PCA_image(_data), (1,2,0,3))
-        bg = data[2,2,2]
+        bg = data[4,4,4]
         #bg = [-100, -100, -100]
         print(bg)
         coors = np.transpose(np.nonzero(data.sum(axis=-1)))
         for p in coors:
             color = data[tuple(p)]
-            if (abs(color[0]-bg[0]) < sh) and (abs(color[1]-bg[1]) < sh) and (abs(color[2]-bg[2]) < sh) or p[0]%38 < 2 or p[1]%38 < 2 or p[2]%62 < 2:
+            if (abs(color[0]-bg[0]) < sh) and (abs(color[1]-bg[1]) < sh) and (abs(color[2]-bg[2]) < sh) or p[0]%36 < 4 or p[1]%36 < 4 or p[2]%60 < 4:
                 continue
             else:
                 rgb = struct.unpack('I', struct.pack('BBBB', *color.astype('uint'), 0))
@@ -175,13 +208,13 @@ def display_array(data_root):
 
 if __name__ == '__main__':
     rclpy.init(args=None)
-    data_source = '/home/sx-zhang/work/GaitCloud-master/dataset/SUSTech1K/'
-    #data_root = data_source+'SUSTech1K-Released-voxel.20/tmp/train/norm_gait.npy'
-    #data_root = data_source+'SUSTech1K-Released-voxel.20/180-far/01-uf-ub_180-far_0931.npy'
+    #data_root = 'SUSTech1K-Released-voxel.20/tmp/train/norm_gait.npy'
+    #data_root = 'SUSTech1K-Released-voxel.20/090-near/01-bg_090-near_0035.npy'
+    #data_root = 'SUSTech1K-Released-voxel.20/tmp/test/01-nm_135_0408.npy'
     #display_train(data_root)
 
-    data_root = data_source+'SUSTech1K-Released-pkl/0931/01-uf-ub/180-far/00-180-far-LiDAR-PCDs.pkl'
-    display_raw(data_root)
+    #data_root = 'SUSTech1K-Released-pkl/0408/01-nm/135/00-135-LiDAR-PCDs.pkl'
+    #display_raw(data_root)
 
     #if display_fullscene:
     #    data_root = data_source+'SUSTech1K-Released-pkl/0747/01-ub/270-far/00-270-far-LiDAR-PCDs.pkl'
@@ -203,5 +236,5 @@ if __name__ == '__main__':
     #    for item in direction:
     #        print(item)
 
-    #data_root = get_parser()
-    #display_array(data_root)
+    data_root = get_parser()
+    display_array(data_root)

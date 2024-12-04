@@ -4,7 +4,7 @@ import seaborn as sn
 import pandas as pd
 import matplotlib.pyplot as plt
 
-data_name = '[2024-10-22_10:46:23.796007]'
+data_name = '[2024-12-02_12:20:39.207604]'
 variance = ['00-nm', '01-nm', 'bg', 'cl', 'cr', 'ub', 'uf', 'oc', 'nt']
 #variance = ['00-nm', '01-nm', '01-bg', '01-cl', '01-cr', '01-oc', '01-ub', 'uf', 'nt']
 view = ['_000_', '000-far', '_045_', '_090_', '090-near', '_135_', '_180_', '180-far', '_225_', '_270_', '270-far', '_315_']
@@ -13,15 +13,15 @@ view_labels = ['000°', '045°', '090°', '135°', '180°', '225°', '270°', '3
 mean_matrix_view = []
 max_matrix_view = []
 
-result = np.load('/home/sx-zhang/work/GaitCloud-master/{}/final.npy'.format(data_name), allow_pickle=True)
+result = np.load('{}/final.npy'.format(data_name), allow_pickle=True)
 accuracy_val = result[0]
 accuracy_train = result[1]
-if len(result) > 2:
-    losses = result[2]
-    np.save('/home/sx-zhang/{}_loss.npy'.format(data_name), losses)
-    if len(result) > 3:
-        failed_record = result[3]
-        failed_start = failed_record[0]
+#if len(result) > 2:
+#    losses = result[2]
+#    np.save('/home/sx-zhang/{}_loss.npy'.format(data_name), losses)
+#    if len(result) > 3:
+#        failed_record = result[3]
+#        failed_start = failed_record[0]
 
 best_train = max(accuracy_train)
 best_train_pos = accuracy_train.index(best_train)

@@ -24,8 +24,8 @@ class MetricEvaluator():
         probe_embeds = probe_embeds.permute(dims=(2,0,1)).contiguous().float()
         gallery_embeds = gallery_embeds.permute(dims=(2,0,1)).contiguous().float()
         dist_metric_part = self.dist_func(probe_embeds, gallery_embeds, logger) #[p, n_p, n_g]
-        #dist_metric_part = self.dist_func(probe_embeds, gallery_embeds, logger) #[p, n_p, n_g]
-        dist_metric = dist_metric_part.mean(0) #[n_p, n_g]
+        dist_metric = dist_metric_part.mean(0) #[n_p, n_g] mean
+        #dist_metric = dist_metric_part.mean(0) + dist_metric_part.min(0)[0] #[n_p, n_g] mean+min
         del dist_metric_part
         if g_is_p:
             dist_metric = dist_metric.fill_diagonal_(dist_metric.max())

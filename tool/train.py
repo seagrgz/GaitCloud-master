@@ -24,8 +24,8 @@ import torch.distributed as dist
 import torch.optim.lr_scheduler as lr_scheduler
 from tensorboardX import SummaryWriter
 from torch.cuda.amp import GradScaler, autocast
-from pytorch_metric_learning import distances, testers, samplers
-from pytorch_metric_learning.utils.accuracy_calculator import AccuracyCalculator
+from pytorch_metric_learning import samplers
+#from pytorch_metric_learning.utils.accuracy_calculator import AccuracyCalculator
 
 #customized modules
 from util import config
@@ -170,10 +170,8 @@ def main():
         args.target = [int(name) for name in np.load(os.path.join(data_root, 'train_list.npy'))]
         #args.target_test = [int(name) for name in np.load(os.path.join(data_root, 'test_list.npy'))]
 
-        gallery = []
-        probe = []
-
-        probes = [item[:-4] for item in sorted(os.listdir(os.path.join(data_root, 'probe')))]
+        namespace['ref'] = [item[:-4] for item in sorted(os.listdir(os.path.join(data_root, 'train'))) if '00-nm' in item]
+        probes = [item[:-4] for item in sorted(os.listdir(os.path.join(data_root, 'test')))]
         for name in splits:
             if name == 'train':
                 namespace[name] = [item[:-4] for item in sorted(os.listdir(os.path.join(data_root, name)))]
@@ -186,11 +184,12 @@ def main():
 
 def main_worker(gpu, ngpus_per_node, argss, data_root, namespace, splits, configs):
     global args, best_iou
+    torch.autograd.set_detect_anomaly(True)
     args = argss
     if args.load_checkpoint:
         print('Loading checkpoint [{}]'.format(args.checkpoint_timestamp))
-        result = np.load('/home/sx-zhang/work/GaitCloud-master/[{}]/[{}].npy'.format(args.checkpoint_timestamp, args.checkpoint_timestamp), allow_pickle=True)
-        checkpoint = torch.load('/home/sx-zhang/work/GaitCloud-master/[{}]/checkpoint[{}].pth'.format(args.checkpoint_timestamp, args.checkpoint_timestamp), map_location=lambda storage, loc: storage.cuda())
+        result = np.load('[{}]/[{}].npy'.format(args.checkpoint_timestamp, args.checkpoint_timestamp), allow_pickle=True)
+        checkpoint = torch.load('[{}]/checkpoint[{}].pth'.format(args.checkpoint_timestamp, args.checkpoint_timestamp), map_location=lambda storage, loc: storage.cuda())
         accuracy_val_curve = result[0]
         accuracy_train_curve = result[1]
         loss_curve = result[2]
@@ -281,8 +280,10 @@ def main_worker(gpu, ngpus_per_node, argss, data_root, namespace, splits, config
             datasets[name] = GaitDataset(split=name, data_root=os.path.join(data_root, name), args=args, datalist=namespace[name])
             dataloaders[name] = torch.utils.data.DataLoader(datasets[name], batch_size=args.batch_size, num_workers=args.workers, collate_fn=Collate_fn, sampler=train_sampler, pin_memory=True, drop_last=True)
         else:
-            datasets[name] = GaitDataset(split=name, data_root=os.path.join(data_root, 'probe'), args=args, datalist=namespace[name])
+            datasets[name] = GaitDataset(split=name, data_root=os.path.join(data_root, 'test'), args=args, datalist=namespace[name])
             dataloaders[name] = torch.utils.data.DataLoader(datasets[name], batch_size=args.batch_size_test, num_workers=args.workers, collate_fn=Collate_fn, pin_memory=True, drop_last=False)
+    referset = GaitDataset(split='ref', data_root=os.path.join(data_root, 'train'), args=args, datalist=namespace['ref'])
+    dataloaders['ref'] = torch.utils.data.DataLoader(referset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, collate_fn=Collate_fn, pin_memory=True, drop_last=True)
 
     if args.load_checkpoint:
         args.start_epoch = checkpoint['epoch']
@@ -294,7 +295,7 @@ def main_worker(gpu, ngpus_per_node, argss, data_root, namespace, splits, config
     best_var = 0
     for epoch in range(args.start_epoch, args.epochs):
         epoch_st = time.time()
-        accuracy_train, losses = metric_train(model, device, dataloaders['train'], optimizer, epoch, args, accuracy_calculator, scheduler, scaler)
+        accuracy_train, losses = metric_train(model, device, dataloaders, optimizer, epoch, args, accuracy_calculator, scheduler, scaler)
         accuracy_train_curve.append(accuracy_train)
         for i in range(len(losses)):
             loss_curve[i] += losses[i]
@@ -353,24 +354,48 @@ def main_worker(gpu, ngpus_per_node, argss, data_root, namespace, splits, config
         logger.info('==>[{}]Training done!'.format(args.timestamp))
 
 #metric learning
-def metric_train(model, device, train_loader, optimizer, epoch, args, accuracy_calculator, scheduler, scaler):
+def metric_train(model, device, dataloaders, optimizer, epoch, args, accuracy_calculator, scheduler, scaler):
     model.train()
     sum_embeddings = []
     sum_labels = []
     loss_items = [[],[],[]]
+    train_loader = dataloaders['train']
+    refer_loader = dataloaders['ref']
+    if args.structure == 'TestNorm':
+        ref_data = []
+        ref_labels = []
+        for ref, labels, _ in refer_loader:
+            ref_data.append(ref.to(device).to(args.dtype))
+            ref_labels.append(labels.to(device).to(args.dtype))
+        ref_data = torch.cat(ref_data)
+        ref_labels = torch.cat(ref_labels)
     for batch_idx, (data, labels, metainfo) in enumerate(train_loader):
+        loop_st = time.time()
         unique_labels = torch.unique(labels)
         #logger.info('start-free memory: {}'.format(get_gpu_info()[0]['memory.free']))
         if not len(labels) == len(unique_labels):
             data, labels, positions = data.to(device).to(args.dtype), labels.to(device).to(args.dtype), metainfo[0].to(device).to(args.dtype)
+            if args.structure == 'TestNorm':
+                #ref_id = torch.randint(0, len(ref_data), tuple([args.batch_size])) #random
+                ref_candidates = [torch.nonzero(ref_labels==lb,as_tuple=True)[0] for lb in labels]
+                red_id = [random.choice(candid.tolist()) for candid in ref_candidates]
+                reference = ref_data[ref_id]
+            else:
+                reference = None
+            #if args.structure == 'TestNorm':
+            #    ref_data, _, _ = next(iter(refer_loader))
+            #    ref_data = data.to(device).to(args.dtype)
+            #else:
+            #    ref_data = None
             optimizer.zero_grad()
             if args.use_bf16:
                 batch_st = time.time()
                 with autocast(dtype=torch.bfloat16):
-                    (losses, mined_triplets, embeddings), _ = model(data, labels, positions=positions, symbol=args.symbol)
+                    (losses, mined_triplets, embeddings), _ = model(data, ref=reference, labels=labels, positions=positions, symbol=args.symbol)
                     forward_end = time.time()
                     loss = losses[0]
                     logger.info("Epoch {} Iteration {}: Sum_loss = {}, TP_loss = {}, CE_loss = {}, Mined triplets = {}".format(epoch, batch_idx, loss.item(), losses[1].item(), losses[2].item(), mined_triplets))
+                    logger.info("Penalty: {}".format(losses[3].detach()))
                     loss.backward()
                     optimizer.step()
             #else: #not used
@@ -387,6 +412,7 @@ def metric_train(model, device, train_loader, optimizer, epoch, args, accuracy_c
             sum_labels.append(labels.detach())
             batch_end = time.time()
             logger.info('forward: {}, backward: {}, total: {}'.format(round(forward_end-batch_st, 4), round(backward_end-forward_end, 4), round(batch_end-batch_st, 4)))
+            #logger.info(round(batch_st-loop_st, 4))
         else:
             logger.info("Epoch {} Iteration {}: Mined triplets = 0, continue for next batch".format(epoch, batch_idx))
     sum_embeddings = torch.cat(sum_embeddings)

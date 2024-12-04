@@ -119,6 +119,22 @@ def add_noise(sample, sigma):
     sample_with_noise = sample + noise_array
     return sample_with_noise
 
+def frame_clean(frame):
+    """
+    remove irrelative points
+    """
+    if len(frame) > 0:
+        if not isinstance(frame, np.ndarray):
+            frame = np.array(frame)
+        #align = np.sum(frame[:,:2]**2, axis=-1) + (-7.5)**2 - 2*frame[:,0]*(-7.5)
+        #base = frame[np.argmin(align)][:2]
+        base = frame[np.argmin(frame[:,1])][:2]
+        dist = np.sum(frame[:,:2]**2, axis=-1) + np.sum(base**2) - 2*np.sum(frame[:,:2]*base, axis=-1)
+        frame_filtered = frame[dist<2]
+    else:
+        frame_filtered = frame
+    return frame_filtered
+
 if __name__ == '__main__':
     rclpy.init(args=None)
     checker = FrameChecker()

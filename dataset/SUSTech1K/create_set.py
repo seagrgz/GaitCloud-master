@@ -40,7 +40,7 @@ def move_data(root, dst, partition):
 
     train_set = partition["TRAIN_SET"]
     test_set = partition["TEST_SET"]
-    label_list = os.listdir('/home/sx-zhang/SUSTech1K/SUSTech1K-Released-pkl')
+    label_list = os.listdir('SUSTech1K-Released-pkl')
     train_list = []
     test_list = []
 
@@ -48,11 +48,21 @@ def move_data(root, dst, partition):
     test_set = [label for label in test_set if label in label_list]
     miss_pids = [label for label in label_list if label not in (train_set + test_set)]
     #test_set = [name for name in target_list if name in test_set]
+    #with open('ignoresamples.yaml', 'r') as f:
+    #    ignore = yaml.safe_load(f)
+    #    ignore_all = ignore['all']
+    #    ignore_part = ignore['part']
+    #f.close()
+    ignore_all = []
+    ignore_part = {}
 
+    #for constrained subset
+    """
     train_names = {}
     test_names = {}
     attribute = ['01-bg_', '01-cl_', '01-cr_', '01-oc_', '01-ub_', 'uf', 'nt', '01-nm_']
     data_list = os.listdir(os.path.join(root, '000-far'))
+
     for var in attribute:
         train_names[var] = [name for name in data_list if (var in name) and (name[-8:-4] in train_set)]
         test_names[var] = [name for name in data_list if (var in name) and (name[-8:-4] in test_set)]
@@ -90,6 +100,7 @@ def move_data(root, dst, partition):
                     if sample not in test_list:
                         test_list.append(sample)
     """
+    #use all samples
     for vp in view:
         print('processing {}'.format(vp))
         data_list = os.listdir(os.path.join(root, vp))
@@ -107,15 +118,19 @@ def move_data(root, dst, partition):
                     pass
             #test set
             elif sample in test_set:
+                if sample in ignore_all:
+                    continue
+                elif sample in ignore_part.keys():
+                    if split == ignore_part[sample]:
+                        continue
                 try:
-                    os.system('cp {}/{}/{} {}/probe/{}'.format(root, view, name, dst, name))
+                    os.system('cp {}/{}/{} {}/test/{}'.format(root, view, name, dst, name))
                     if sample not in test_list:
                         test_list.append(sample)
                 except FileNotFoundError:
                     pass
             else:
                 print('Unused sample: {}'.format(name))
-    """
     return train_list, test_list
 
 def create_baseline(data_root, dst, ref_root, partition):
@@ -188,13 +203,13 @@ if __name__ == '__main__':
         dst = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-baseline'
         ref_root = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20'
     else:
-        data_root = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20'
-        dst = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20/tmp.strictprune'
+        data_root = 'SUSTech1K-Released-voxel.20'
+        dst = 'SUSTech1K-Released-voxel.20/tmp'
 
     os.system('rm -rf {}'.format(dst))
     os.system('mkdir {}'.format(dst))
     os.system('mkdir {}/train'.format(dst))
-    os.system('mkdir {}/probe'.format(dst))
+    os.system('mkdir {}/test'.format(dst))
 
     with open('/home/sx-zhang/Downloads/OpenGait-master/datasets/SUSTech1K/SUSTech1K.json', 'rb') as f:
         partition = json.load(f)

@@ -27,7 +27,7 @@ DATA:
   load_checkpoint: False #set to False to start a new trial
   checkpoint_timestamp: '2024-02-02 07:21:51.009417'
 
-  visual: True
+  visual: False
   visual_freq: 20
   visual_names: ['01-nm_090_0223', '01-bg_090_0013', '01-cl_090_0400', '00-nm_090_0400', '01-cr_090_0110', '01-ub_090_0333']
 

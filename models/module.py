@@ -128,6 +128,86 @@ class LayerCNN(nn.Module):
         #return torch.transpose(out.view(n, h, c, w, l), 1, 2)
         return out
 
+class GaitNorm(nn.Module):
+    def __init__(self, io_channel):
+        mid_channel = io_channel*2
+        trans_channel = mid_channel*2
+        super().__init__()
+        self.downstream = nn.Sequential(
+                nn.Conv3d(io_channel, mid_channel, 3, padding=1),
+                nn.BatchNorm3d(mid_channel),
+                nn.ReLU(inplace=True),
+                nn.Conv3d(mid_channel, mid_channel, 3, padding=1),
+                nn.BatchNorm3d(mid_channel),
+                nn.ReLU(inplace=True)
+                )
+        self.trans = nn.Sequential(
+                nn.MaxPool3d(2),
+                nn.Conv3d(mid_channel, trans_channel, 3, padding=1),
+                nn.BatchNorm3d(trans_channel),
+                nn.ReLU(inplace=True),
+                nn.Conv3d(trans_channel, trans_channel, 1),
+                nn.BatchNorm3d(trans_channel),
+                nn.ReLU(inplace=True)
+                )
+        self.up = nn.ConvTranspose3d(trans_channel, mid_channel, kernel_size=2, stride=2)
+        self.upstream = nn.Sequential(
+                nn.Conv3d(mid_channel*2, mid_channel, 3, padding=1),
+                nn.BatchNorm3d(mid_channel),
+                nn.ReLU(inplace=True),
+                nn.Conv3d(mid_channel, mid_channel, 3, padding=1),
+                nn.BatchNorm3d(mid_channel),
+                nn.ReLU()
+                )
+        self.outlayer = nn.Conv3d(mid_channel, io_channel, 1)
+        #self.cosim = nn.CosineSimilarity()
+        self.mae = nn.HuberLoss()
+
+        #self.vis_feats = {}
+
+    def forward(self, x, batch_size, part_num=16, training=True):
+        x = self.downstream(x) #[n+ref, c, h, w, l]
+        identity = x[:batch_size]
+        x = self.trans(x) #[n+ref, c, h, w, l]
+        out = self.up(x[:batch_size])
+        if training:
+            n, c = x.shape[:2]
+            assert n == batch_size*2, "Number of samples and references should be identical"
+            feat = torch.mean(x.view(n, c, part_num, -1), dim=-1) #[n+ref, c, p]
+            #penalty = self.cosim(feat[:batch_size], feat[batch_size:]).transpose(0,1) #[p, n]
+            dists = self.ComputeDistance(feat, batch_size) #[p, n*ref]
+            penalty = self.Reducer(dists) #[1]
+            #penalty = self.mae(feat[:batch_size], feat[batch_size:])
+        else:
+            penalty = 0
+        out = self.upstream(torch.cat([identity, out], dim=1))
+        out = self.outlayer(out)
+        return out, penalty
+
+    def Reducer(self, penalty):
+        eps = 10e-9
+        p_sum = penalty.sum(-1) #[p]
+        num = (penalty.detach().clone() != 0).sum(-1).float()
+        p_mean = p_sum/(num+eps)
+        p_mean[num == 0] = 0
+        return p_mean.mean()
+
+    def ComputeDistance(self, feat, batch_size):
+        """
+            feat: [n+ref, c, p]
+            dist: [p, n*ref]
+        """
+        eps = 1e-9
+        feat = feat.permute(2, 0, 1) #[p, n+ref, c]
+        x = feat[:, :batch_size, :]
+        y = feat[:, batch_size:, :]
+        x2 = torch.sum(x ** 2, -1).unsqueeze(2)  # [p, n, 1]
+        y2 = torch.sum(y ** 2, -1).unsqueeze(1)  # [p, 1, ref]
+        inner = x.matmul(y.transpose(1, 2))  # [p, n, ref]
+        dist = x2 + y2 - 2 * inner
+        dist = torch.sqrt(F.relu(dist) + eps)  # [p, n, ref]
+        return dist.view(dist.shape[0], -1)
+
 class ScaleFusionCNN(nn.Module):
     def __init__(self, in_channel=32, out_channel=64, batch_size=8):
         self.centroid = 18
@@ -302,6 +382,38 @@ class ConvHPP(nn.Module):
             features.append(z)
         return torch.cat(features, -1)
 
+class LinearProjection(nn.Module):
+    def __init__(self, parts_in=10, parts_out=16, channels=512):
+        super(LinearProjection, self).__init__()
+        self.fc_bin = nn.Parameter(nn.init.xavier_uniform_(torch.zeros(channels, parts_in, parts_out)))
+
+    def forward(self, x):
+        """
+            x: [n, c, p_in]
+            out: [n, c, p_out]
+        """
+        x = x.permute(1, 0, 2).contiguous() #[c, n, p_in]
+        out = x.matmul(self.fc_bin) #[c, n, p_out]
+        return out.permute(1, 0, 2).contiguous()
+
+class SeparateBNNecks(nn.Module):
+    """
+        Bag of Tricks and a Strong Baseline for Deep Person Re-Identification
+        CVPR Workshop:  https://openaccess.thecvf.com/content_CVPRW_2019/papers/TRMTMCT/Luo_Bag_of_Tricks_and_a_Strong_Baseline_for_Deep_Person_CVPRW_2019_paper.pdf
+        Github: https://github.com/michuanhaohao/reid-strong-baseline
+    """
+
+    def __init__(self, parts_num=16, in_channels=256, class_num=250, norm=True, parallel_BN1d=True):
+        super(SeparateBNNecks, self).__init__()
+        self.p = parts_num
+        self.class_num = class_num
+        self.norm = norm
+        self.fc_bin = nn.Parameter(
+            nn.init.xavier_uniform_(
+                torch.zeros(parts_num, in_channels, class_num)))
+        if parallel_BN1d:
+            self.bn1d = nn.BatchNorm1d(in_channels * parts_num)
+
 class SeparateFCs(nn.Module):
     def __init__(self, parts_num=16, in_channels=512, out_channels=256, norm=False):
         super(SeparateFCs, self).__init__()
@@ -419,13 +531,14 @@ class LossAggregator(nn.Module):
 
         self.TP_weight = 1#nn.Parameter(torch.Tensor(1))
         self.CE_weight = 0.1#nn.Parameter(torch.Tensor(1))
+        self.Norm_weight = 1
         #self.miner = miners.TripletMarginMiner(margin=0.2, type_of_triplets="all")
         self.scale = 16
 
-    def forward(self, TP_feat, CE_feat, labels):
+    def forward(self, TP_feat, CE_feat, labels, Norm_loss=0):
         #TP_feat = TP_feat.view(TP_feat.shape[0], -1)
         #d = CE_feat.shape[-1]
-        #
+
         #indices_tuple = self.miner(TP_feat, labels)
         #TP_loss = self.TPloss(TP_feat, labels)
         #CE_loss = self.CEloss(CE_feat*self.scale, labels.unsqueeze(1).repeat(1, d).long())
@@ -439,10 +552,11 @@ class LossAggregator(nn.Module):
         #ce_end = time.time()
         mined_triplets = loss_num.sum().item()
 
-        loss_sum = TP_loss.mean()*self.TP_weight + CE_loss.mean()*self.CE_weight
+        #print(penalty)
+        loss_sum = TP_loss.mean()*self.TP_weight + CE_loss.mean()*self.CE_weight + Norm_loss*self.Norm_weight
         #end = time.time()
         #print('tp time: {}, ce time: {}, total: {}'.format(round(tp_end-st, 4), round(ce_end-tp_end, 4), round(end-st, 4)))
-        return [loss_sum,TP_loss.mean(),CE_loss.mean()], mined_triplets
+        return [loss_sum,TP_loss.mean(),CE_loss.mean(), Norm_loss.mean()], mined_triplets
 
 class Odict(OrderedDict):
     def append(self, odict):
@@ -558,11 +672,12 @@ class TripletLoss(BaseLoss):
             x: [p, n_x, c]
             y: [p, n_y, c]
         """
+        eps = 1e-9
         x2 = torch.sum(x ** 2, -1).unsqueeze(2)  # [p, n_x, 1]
         y2 = torch.sum(y ** 2, -1).unsqueeze(1)  # [p, 1, n_y]
         inner = x.matmul(y.transpose(1, 2))  # [p, n_x, n_y]
         dist = x2 + y2 - 2 * inner
-        dist = torch.sqrt(F.relu(dist))  # [p, n_x, n_y]
+        dist = torch.sqrt(F.relu(dist) + eps)  # [p, n_x, n_y]
         return dist
 
     def Convert2Triplets(self, row_labels, clo_label, dist):

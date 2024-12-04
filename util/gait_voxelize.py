@@ -10,7 +10,7 @@ import os
 import shutil
 import sys
 import time
-from pretreatment import frame_voxelize, frame_rotation, assign_ID, frame_dilution, add_noise
+from pretreatment import frame_voxelize, frame_rotation, assign_ID, frame_dilution, add_noise, frame_clean
 
 #dataset setup
 tfusion = False
@@ -171,12 +171,14 @@ def create_SUSTech(dst, frame_num, split=None, viewpoint=None, dilution=1, noise
                         sample_depth = []
                         #(z, x, y)
                         voxel_sample = []
+                        #for iframe in range(len(data)):
+                        #    data[iframe] = frame_clean(data[iframe])
                         for iframe in range(len(data)):
                             if len(data[iframe]) > 0:
                                 if state == 0:
                                     enable_start = iframe
                                     alpha = get_dir(data, iframe, min(iframe+20, sample_len-1), viewpoint)
-                                    ground = min([min(frame[:,2]) for frame in data[iframe:]])
+                                    ground = min([min(frame[:,2]) for frame in data[iframe:] if len(frame)>0])
                                     print('Rotation: {}, Ground: {}'.format(alpha, ground))
                                     state = 1
                                 if dilution > 1:

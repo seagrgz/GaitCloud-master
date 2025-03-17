@@ -1,27 +1,23 @@
 DATA:
-  #data_name: gait_database
   data_name: SUSTech1K
-  #data_root: dataset/gait_database/dataset{}/{}
-  data_root: dataset/SUSTech1K/SUSTech1K-Released-voxel.20/tmp #voxelized data
-  #data_root: /home/sx-zhang/SUSTech1K/SUSTech1K-Released-baseline #lidargait
-  data_split: SUS #dir1~4, combined, SUS
-  frame_size:  #10,15,_voxel (_voxel if not using temporal representation) discard
-  classes: 
-  feature: 1 #xyz, ins, depth, random, fix, (feature_size for SUSTech1K)
+  data_root: dataset/SUSTech1K/SUSTech1K-Released-voxel.20/tmp
+  data_split: SUS
+  frame_size: #not used with SUSTech1K
+  class:
+  feature: 1 #feature_size
   splits: ['train', '_000_', '_045_', '_090_', '_135_', '_180_', '_225_', '_270_', '_315_', '000-far', '090-near', '180-far', '270-far', '00-nm', '01-nm', 'bg', 'cl', 'cr', 'ub', 'uf', 'oc', 'nt']
   splits_variance: ['00-nm', '01-nm', 'bg', 'cl', 'cr', 'ub', 'uf', 'oc', 'nt']
   splits_view: ['_000_', '_045_', '_090_', '_135_', '_180_', '_225_', '_270_', '_315_', '000-far', '090-near', '180-far', '270-far']
-  target: #[0,1,2,3,4,5]
-  lines: 16 #[6,7,10] #number or list of lines
-  structure: TestNorm #model name in model/CNN
-  test_split: test #test, feature, line, temporal, retemporal
-  datatype: half #double, float, half
-  
+  target:
+  lines:
+  structure: Baseline
+  datatype: half #bf16
+
   reload_data: True
-  identifier: N_
+  identifier: B_ #prefix for parallel training
+  with_depth: False
   use_gpu: True
   use_metric: True
-  #use_variation: True
   use_Aloss: True #set to False to use metric learning only
   free_memory_required: 1024
   load_checkpoint: False #set to False to start a new trial

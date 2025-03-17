@@ -35,11 +35,11 @@ TRAIN:
   arch: CNN_LSTM_cls_repro
   ignore_label: None
   train_gpu: [0]
-  workers: 8  # data loader workers
-  batch_size: 8 # batch size for training
+  workers: 16  # data loader workers
+  batch_size: 16 # batch size for training
   batch_size_test: 64
   base_lr: 0.1
-  epochs: 100
+  epochs: 200
   start_epoch: 0
   step_epoch: 30
   momentum: 0.9
@@ -51,6 +51,7 @@ TRAIN:
   weight:  # path to initial weight (default: none)
   resume:  # path to latest checkpoint (default: none)
   eval_freq: 1
+  eval_start: 0.9
   mean_range: 50
 Distributed: 
   dist_url: tcp://localhost:8888

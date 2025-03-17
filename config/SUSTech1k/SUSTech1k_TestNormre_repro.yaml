@@ -13,12 +13,13 @@ DATA:
   splits_view: ['_000_', '_045_', '_090_', '_135_', '_180_', '_225_', '_270_', '_315_', '000-far', '090-near', '180-far', '270-far']
   target: #[0,1,2,3,4,5]
   lines: 16 #[6,7,10] #number or list of lines
-  structure: TestNorm #model name in model/CNN
+  structure: TestNorm_re #model name in model/CNN
   test_split: test #test, feature, line, temporal, retemporal
   datatype: half #double, float, half
+  pretrain_path: '[2025-01-24_08:48:10.976397]/best_view.pth'
   
   reload_data: True
-  identifier: N_
+  identifier: Nre_
   use_gpu: True
   use_metric: True
   #use_variation: True
@@ -33,8 +34,9 @@ DATA:
   visual_train_names: ['01-ub_090_0301', '00-nm_090_0301']
 
 TRAIN:
+  arch: CNN_LSTM_cls_repro
   ignore_label: None
-  train_gpu: [0]
+  train_gpu: [1]
   workers: 8  # data loader workers
   batch_size: 8 # batch size for training
   batch_size_test: 64

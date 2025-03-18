@@ -24,7 +24,7 @@
     tfusion = False                         # If create temporal expended samples.  
 #### 4. Set `data_root` in `create_set.py` to the name of voxelelized dataset and run `SUSTech1K-voxelize.py` and `create_set.py` sequentially.  
 #### \(Optional\) 5. Set `lidargait` in `create_set.py` True to prepare the data for [LidarGait](https://openaccess.thecvf.com/content/CVPR2023/papers/Shen_LidarGait_Benchmarking_3D_Gait_Recognition_With_Point_Clouds_CVPR_2023_paper.pdf)   reproduction. \(After step 4 processed.\)  
-#### \(Optional\) 6. Set `tfusion` in `SUSTech1K-voxelize.py` True and repeat step 3, 4 to create temporal expanded GaitCloud.  
+#### \(Optional\) 6. Set `frame_num = 10` and `tfusion = True` `SUSTech1K-voxelize.py`. Repeat step 3, 4 to create temporal expanded GaitCloud.  
 ##  Train the models  
 &nbsp;&nbsp;&nbsp;&nbsp;cd to the root folder of this repository and run `sh tool/train.sh SUSTech1K [exp name]`.  
 &nbsp;&nbsp;&nbsp;&nbsp;Set **exp name**  

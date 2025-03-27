@@ -8,7 +8,7 @@ import itertools
 import random
 import numpy as np
 
-data_root = 'SUSTech1K-Released-voxel.20comp2'
+data_root = 'SUSTech1K-Released-voxel.20tmpcomp2'
 lidargait = False
 #def move_view_fix(data_root, dst):
 #    variance = ['00-nm', '01-nm']
@@ -216,7 +216,7 @@ if __name__ == '__main__':
     f.close()
 
     ##training
-    if baseline:
+    if lidargait:
         train_list, test_list = create_baseline(data_root, dst, ref_root, partition)
     else:
         train_list, test_list = move_data(data_root, dst, partition)

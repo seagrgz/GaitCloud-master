@@ -136,6 +136,13 @@ def random_head_sample(seq, frame_num):
     sampled_frames = np.stack(sampled_frames)
     return sampled_frames
 
+def dim_compress(seq, compress, dim=2): #compress y dimension as default
+    seg_len = seq.shape[dim]/compress
+    assert seg_len == int(seg_len), 'Box length ({}) should be divisable by the number of segments ({})'.format(sample.shape[dim], compress)
+    seg_len = int(seg_len)
+    seq_out = np.stack([np.sum(seq[...,i*seg_len:(i+1)*seg_len], axis=dim) for i in range(compress)], axis=dim)
+    return seq_out
+
 def create_SUSTech(dst, 
         frame_num, 
         box_size,
@@ -145,7 +152,7 @@ def create_SUSTech(dst,
         dilution=1, 
         noise=0, 
         counter=1, 
-        compress=False
+        compress=0,
         tfusion=False):
     if split==None and viewpoint==None:
         split, viewpoint = get_parser()
@@ -195,7 +202,7 @@ def create_SUSTech(dst,
                                     data_frame = frame_rotation(data_frame, alpha) #Rotation
                                     voxel_frame, frame_depth = frame_voxelize(data_frame, ground, box_size, res) #Voxelization
                                     voxel_frame[...,-1] = np.sqrt(np.sum(voxel_frame[...,:3]**2, axis=-1))
-                                    voxel_sample.append(voxel_frame[...,-1])
+                                    voxel_sample.append(voxel_frame[...,-1]) #record depth as voxel value
                                     sample_depth.append(frame_depth)
                         state = 0
                         if len(voxel_sample) == 0:
@@ -208,17 +215,18 @@ def create_SUSTech(dst,
 
                             if tfusion:
                                 centroid = sum(sample_depth)/len(sample_depth)
-                                #sampled_frames[sampled_frames!=0] = 1
-                                sample_final = np.asarray([sampled_frames.astype('int8'), centroid], dtype=object)
+                                if compress:
+                                    sampled_frames[sampled_frames!=0] = 1
+                                    sample_final = dim_compress(sampled_frames, compress, dim=3) #(T, z, x, y)
+                                else:
+                                    sample_final = sampled_frames
+                                sample_final = np.asarray([sample_final.astype('int8'), centroid], dtype=object)
                                 np.save(save_path, sample_final, allow_pickle=True) #one sample saved
                             else:
                                 sample_final = np.count_nonzero(sampled_frames, axis=0)*counter #[z, x, y]
                                 centroid = sum(sample_depth)/len(sample_depth)
                                 if compress:
-                                    seg = sample_final.shape[2]/compress
-                                    assert seg == int(seg), 'Box length ({}) should be divisable by the number of segments ({})'.format(sample.shape[2], compress)
-                                    seg = int(seg)
-                                    sample_final = np.stack([np.sum(sample_final[...,i*seg:(i+1)*seg], axis=2) for i in range(compress)], axis=2)
+                                    sample_final = dim_compress(sample_final, compress, dim=2)
                                     #print(sample_final.shape)
                                 sample_final = np.asarray([sample_final.astype('int8'), centroid], dtype=object)
                                 np.save(save_path, sample_final, allow_pickle=True) #one sample saved

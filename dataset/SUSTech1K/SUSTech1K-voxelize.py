@@ -9,16 +9,16 @@ from sklearn.cluster import DBSCAN
 sys.path.append('../../util/')
 from gait_voxelize import create_SUSTech, find_minimum_cluster
 
-name = 'SUSTech1K-Released-voxel.20comp2'
+name = 'SUSTech1K-Released-voxel.20tmpcomp2'
 frame_num = 20
 box_size = [1.25,1.25,2]
 res = 0.03125
 dilution=1
 noise=0
-compress=0
-tfusion=False
+compress=2
+tfusion=True
 
-def voxelize(data_root,
+def voxelize(name,
         frame_num,
         box_size,
         res,
@@ -29,18 +29,18 @@ def voxelize(data_root,
         tfusion=False):
     split_list = ['nt', 'cr', 'bg', 'ub', 'oc', 'cl', 'uf', '01-nm', '00-nm']
     view_list = ['000', '045', '090', '135', '180', '225', '270', '315', '000-far', '090-near', '180-far', '270-far']
-    if os.path.exists(data_root):
+    if os.path.exists(name):
         print('Removing old data ...')
-        os.system('rm -rvf {}'.format(data_root))
-        os.system('mkdir {}'.format(data_root))
+        os.system('rm -rvf {}'.format(name))
+        os.system('mkdir {}'.format(name))
     else:
-        os.system('mkdir {}'.format(data_root))
+        os.system('mkdir {}'.format(name))
 
     for view in view_list:
-        os.system('mkdir {}/{}'.format(data_root, view))
+        os.system('mkdir {}/{}'.format(name, view))
         for split in split_list:
             print('Processing {} {}...'.format(split, view))
-            create_SUSTech(data_root, frame_num, box_size, res, split, view, dilution, noise, counter, compress, tfusion)
+            create_SUSTech(name, frame_num, box_size, res, split, view, dilution, noise, counter, compress, tfusion)
 
 def get_info(frame):
     min_x = np.min(frame[:,0])

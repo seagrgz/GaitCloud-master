@@ -13,6 +13,7 @@
        |--SUSTech1K
        |      |--SUSTech1K-Released-pkl
        |      |      |--subject id
+       |      |      |      |--...
 #### 3. Set the parameters in **SUSTech1K-voxelize.py** as follow:  
     name = 'any name for voxelized dataset',  
     frame_num = 20,                         # Number of frames used to create a sample.  

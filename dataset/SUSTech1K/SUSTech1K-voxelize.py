@@ -6,13 +6,29 @@ import pickle
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
 
-sys.path.append('/home/work/sx-zhang/GaitCloud-master/util/')
+sys.path.append('../../util/')
 from gait_voxelize import create_SUSTech, find_minimum_cluster
 
-split_list = ['nt', 'cr', 'bg', 'ub', 'oc', 'cl', 'uf', '01-nm', '00-nm']
-view_list = ['000', '045', '090', '135', '180', '225', '270', '315', '000-far', '090-near', '180-far', '270-far']
+name = 'SUSTech1K-Released-voxel.20comp2'
+frame_num = 20
+box_size = [1.25,1.25,2]
+res = 0.03125
+dilution=1
+noise=0
+compress=0
+tfusion=False
 
-def voxelize(data_root, frame_num, dilution=1, noise=0):
+def voxelize(data_root,
+        frame_num,
+        box_size,
+        res,
+        dilution=1,
+        noise=0,
+        counter=1,
+        compress=False,
+        tfusion=False):
+    split_list = ['nt', 'cr', 'bg', 'ub', 'oc', 'cl', 'uf', '01-nm', '00-nm']
+    view_list = ['000', '045', '090', '135', '180', '225', '270', '315', '000-far', '090-near', '180-far', '270-far']
     if os.path.exists(data_root):
         print('Removing old data ...')
         os.system('rm -rvf {}'.format(data_root))
@@ -24,7 +40,7 @@ def voxelize(data_root, frame_num, dilution=1, noise=0):
         os.system('mkdir {}/{}'.format(data_root, view))
         for split in split_list:
             print('Processing {} {}...'.format(split, view))
-            create_SUSTech(data_root, frame_num, split, view, dilution, noise)
+            create_SUSTech(data_root, frame_num, box_size, res, split, view, dilution, noise, counter, compress, tfusion)
 
 def get_info(frame):
     min_x = np.min(frame[:,0])
@@ -125,4 +141,4 @@ if __name__ == '__main__':
     #log_file.close()
     #for noise in [0.005,0.015,0.025,0.035,0.045,0.055,0.065,0.075,0.085,0.095]:
     #    voxelize('/home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20dev{}'.format(noise), frame_num=20, dilution=1, noise=noise)
-    voxelize('/home/work/sx-zhang/GaitCloud-master/dataset/SUSTech1K/SUSTech1K-Released-voxel.20', frame_num=20, dilution=1, noise=0)
+    voxelize(name=name, frame_num=frame_num, box_size=box_size, res = res, dilution=dilution, noise=noise, compress=compress, tfusion=tfusion)

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import time
-from models.module import ConvBlock, FlatIn, LayerCNN, ScaleFusionCNN, HPP, SPP, ConvHPP, SeparateFCs, SeparateBNNecks, LinearProjection, LossAggregator
+from models.module import ResBlock, FlatIn, LayerCNN, ScaleFusionCNN, HPP, SPP, ConvHPP, SeparateFCs, SeparateBNNecks, LinearProjection, LossAggregator
 
 class TestAll(nn.Module):
     def __init__(self, args, in_size):
@@ -10,14 +10,14 @@ class TestAll(nn.Module):
         #self.layerencoder = FlatIn(64)
         #self.scalencoder = ScaleFusionCNN(in_channel=64, out_channel=64)
         #self.encoder = nn.Sequential(
-        #        ConvBlock([64,64], stride=1),
-        #        ConvBlock([64,128]),
-        #        ConvBlock([128,256]),
-        #        ConvBlock([256,512], stride=1))
-        self.enc_1 = ConvBlock([64,64], stride=1)
-        self.enc_2 = ConvBlock([64,128])
-        self.enc_3 = ConvBlock([128,256])
-        self.enc_4 = ConvBlock([256,512], stride=1)
+        #        ResBlock([64,64], stride=1),
+        #        ResBlock([64,128]),
+        #        ResBlock([128,256]),
+        #        ResBlock([256,512], stride=1))
+        self.enc_1 = ResBlock([64,64], stride=1)
+        self.enc_2 = ResBlock([64,128])
+        self.enc_3 = ResBlock([128,256])
+        self.enc_4 = ResBlock([256,512], stride=1)
         
         self.HPP = ConvHPP()
         #self.HPP = HPP()
@@ -40,10 +40,10 @@ class TestAll(nn.Module):
 
         #for channel num. is not 512
         #self.encoder = nn.Sequential(
-        #        #ConvBlock([64,64], stride=1),
-        #        ConvBlock([64,128]),
-        #        ConvBlock([128,256]),
-        #        ConvBlock([256,512], stride=1))
+        #        #ResBlock([64,64], stride=1),
+        #        ResBlock([64,128]),
+        #        ResBlock([128,256]),
+        #        ResBlock([256,512], stride=1))
         #self.FCs = SeparateFCs(in_channels=512)
         #self.HPP = ConvHPP(channel=512)
         #self.HPP = HPP()

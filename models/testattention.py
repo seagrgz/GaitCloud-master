@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch
 import time
-from models.module import ConvBlock, FlatIn, LayerCNN, ScaleFusionCNN, SymbolMHA, SymbolAttention, HPP, ConvHPP, SeparateFCs, SeparateBNNecks, LossAggregator
+from models.module import ResBlock, FlatIn, LayerCNN, ScaleFusionCNN, SymbolMHA, SymbolAttention, HPP, ConvHPP, SeparateFCs, SeparateBNNecks, LossAggregator
 
 class TestAttention(nn.Module):
     def __init__(self, args, in_size):
@@ -12,10 +12,10 @@ class TestAttention(nn.Module):
         #self.attention = SymbolMHA(embed_dim=64)
         self.attention = SymbolAttention()
         self.encoder = nn.Sequential(
-                ConvBlock([64,64], stride=1),
-                ConvBlock([64,128]),
-                ConvBlock([128,256]),
-                ConvBlock([256,512], stride=1))
+                ResBlock([64,64], stride=1),
+                ResBlock([64,128]),
+                ResBlock([128,256]),
+                ResBlock([256,512], stride=1))
         #self.attention = SymbolMHA(embed_dim=512)
         self.FCs = SeparateFCs()
         self.BNNecks = SeparateBNNecks(class_num=len(args.target))

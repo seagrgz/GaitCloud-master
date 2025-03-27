@@ -1,18 +1,18 @@
 import torch
 import torch.nn as nn
 import time
-from models.module import ConvBlock, LayerCNN, GaitNorm, HPP, SeparateFCs, SeparateBNNecks, LossAggregator
+from models.module import ResBlock, LayerCNN, GaitNorm, ConvHPP, SeparateFCs, SeparateBNNecks, LossAggregator
 
 class TestNorm(nn.Module):
     def __init__(self, args, in_size):
         super().__init__()
         self.layerencoder = LayerCNN(channels=[16,64], resblock=True)
         self.enc_1 = GaitNorm(64)
-        self.enc_2 = ConvBlock([64,128])
-        self.enc_3 = ConvBlock([128,256])
-        self.enc_4 = ConvBlock([256,512], stride=1)
+        self.enc_2 = ResBlock([64,128])
+        self.enc_3 = ResBlock([128,256])
+        self.enc_4 = ResBlock([256,512], stride=1)
         
-        self.HPP = HPP()
+        self.HPP = ConvHPP()
         self.FCs = SeparateFCs()
         self.BNNecks = SeparateBNNecks(class_num=len(args.target))
         

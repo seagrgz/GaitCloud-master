@@ -8,6 +8,8 @@ import itertools
 import random
 import numpy as np
 
+data_root = 'SUSTech1K-Released-voxel.20comp2'
+lidargait = False
 #def move_view_fix(data_root, dst):
 #    variance = ['00-nm', '01-nm']
 #    view = '000'
@@ -197,21 +199,19 @@ def create_inference(root, std_dev, test_set):
                     os.system('cp {}/{}/{} /home/sx-zhang/SUSTech1K/inference/dev_{}/{}'.format(root, view, name, std_dev, name))
 
 if __name__ == '__main__':
-    baseline = False
-    if baseline:
-        data_root = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-pkl'
-        dst = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-baseline'
-        ref_root = '/home/sx-zhang/SUSTech1K/SUSTech1K-Released-voxel.20'
+    if lidargait:
+        data_root = 'SUSTech1K-Released-pkl'
+        dst = 'SUSTech1K-Released-baseline'
+        ref_root = 'SUSTech1K-Released-voxel.20'
     else:
-        data_root = 'SUSTech1K-Released-voxel.20'
-        dst = 'SUSTech1K-Released-voxel.20/tmp'
+        dst = data_root+'/tmp'
 
     os.system('rm -rf {}'.format(dst))
     os.system('mkdir {}'.format(dst))
     os.system('mkdir {}/train'.format(dst))
     os.system('mkdir {}/test'.format(dst))
 
-    with open('/home/sx-zhang/Downloads/OpenGait-master/datasets/SUSTech1K/SUSTech1K.json', 'rb') as f:
+    with open('SUSTech1K.json', 'rb') as f:
         partition = json.load(f)
     f.close()
 

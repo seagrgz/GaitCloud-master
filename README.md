@@ -32,8 +32,8 @@ By default, runtime model at the last 10 epochs will be evauated with samples in
 &nbsp;&nbsp;&nbsp;&nbsp;cd to the root folder of this repository and run `sh tool/train.sh SUSTech1K [exp_name]`.  
 &nbsp;&nbsp;&nbsp;&nbsp;Set **exp_name**  
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to **GaitCloud_repro** for the model in this paper.  
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to **LidarGait** for our reproduction of LidarGait.  
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to **LidarGait3D** for 3D-LidarGait with temporal expanded GaitCloud.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to **LidarGait_repro** for our reproduction of LidarGait.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to **LidarGait3D_repro** for 3D-LidarGait with temporal expanded GaitCloud.  
 This will start the model training with config files at `config/SUSTech1K/exp_name`.  
 #### \*\* You may need to modify the data root in the config files to meet the customized dataset name. Make sure you already have according data in `datasetname/tmp`. \*\*
 

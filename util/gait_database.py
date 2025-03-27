@@ -58,7 +58,7 @@ class GaitDataset(Dataset):
         
         #print(label)
         #label mapping
-        if (self.args.use_Aloss and self.split == 'train'):
+        if (self.args.use_Aloss and self.split in ['train', 'ref']):
             label = self.target.index(label)
 
         return data, label, [position, self.data_list[data_idx]]

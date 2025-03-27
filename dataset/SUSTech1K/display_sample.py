@@ -20,7 +20,7 @@ from util.gait_voxelize import get_dir
 from models.module import PCA_image
 
 #sample = 371
-display_fullscene = True
+display_fullscene = False
 trace = True
 frame_num = 20
 ch_cali = [100, -0.01]
@@ -45,10 +45,10 @@ class VisualArray(Node):
         self.points = []
         self.header = Header(frame_id = 'velodyne')
 
-    def publish(self):
+    def publish(self, message=None):
         pubdata = point_cloud2.create_cloud(self.header, self.field, self.points)
         self.pub.publish(pubdata)
-        print('Published')
+        print('Publishing ', message)
 
 class FrameChecker(Node):
     def __init__(self, display_fullscene):
@@ -168,13 +168,15 @@ def display_raw(data_root):
 
 #train sample located at SUSTech1K-Released-voxel
 def display_train(data_root):
+    disp_scale = 80
     checker = FrameChecker(False)
     _data = np.load(data_root, allow_pickle=True)
     if len(_data.shape) == 1:
         _data = _data[0]
     data = np.transpose(_data, (1,2,0))
+    print(data.shape)
     points = np.transpose(np.nonzero(data))
-    checker.points = np.append(points/32, data[np.nonzero(data)][:,np.newaxis], axis=1).tolist()
+    checker.points = np.append(points/disp_scale, data[np.nonzero(data)][:,np.newaxis], axis=1).tolist()
     checker.publish(data_root)
     time.sleep(0.25)
     checker.publish(data_root)
@@ -183,35 +185,48 @@ def display_train(data_root):
 
 def display_array(data_root):
     checker = VisualArray()
-    _data = np.load(data_root)
-    sh = 40
+    _data = np.squeeze(np.load(data_root))
+    disp_scale = 80
+    sh = 10
     if len(_data.shape) == 4:
-        data = np.transpose(PCA_image(_data), (1,2,0,3))
-        bg = data[4,4,4]
-        #bg = [-100, -100, -100]
+        data = np.transpose(PCA_image(_data), (1,2,0,3)) #(z, x, y, c) -> (x, y, z, c)
+        #bg = data[4,4,4]
+        bg = [-100, -100, -100]
         print(bg)
         coors = np.transpose(np.nonzero(data.sum(axis=-1)))
         for p in coors:
             color = data[tuple(p)]
-            if (abs(color[0]-bg[0]) < sh) and (abs(color[1]-bg[1]) < sh) and (abs(color[2]-bg[2]) < sh) or p[0]%36 < 4 or p[1]%36 < 4 or p[2]%60 < 4:
+            if (abs(color[0]-bg[0]) < sh) and (abs(color[1]-bg[1]) < sh) and (abs(color[2]-bg[2]) < sh):# or p[0]%36 < 4 or p[1]%36 < 4 or p[2]%60 < 4:
                 continue
             else:
                 rgb = struct.unpack('I', struct.pack('BBBB', *color.astype('uint'), 0))
-                checker.points.append(list(p/32)+list(rgb))
+                checker.points.append(list(p/disp_scale)+list(rgb))
     else:
         data = np.transpose(_data, (1,2,0))
         coors = np.transpose(np.nonzero(data))
-        checker.points = np.append(coors/32, data[np.nonzero(data)][:,np.newaxis], axis=1).tolist()
+        print(max(data[np.nonzero(data)]))
+        checker.points = np.append(coors/disp_scale, data[np.nonzero(data)][:,np.newaxis], axis=1).tolist()
 
-    for i in range(5):
-        checker.publish()
+    #for i in range(5):
+    #    checker.publish()
+
+    p_buff = checker.points
+    checker.points = []
+    dim = 1
+    #print(data.shape)
+    for s in range(data.shape[dim]-25):
+        for point in p_buff:
+            if point[dim] == s/disp_scale:
+                checker.points.append(point)
+        checker.publish(s)
+        time.sleep(0.1)
 
 if __name__ == '__main__':
     rclpy.init(args=None)
     #data_root = 'SUSTech1K-Released-voxel.20/tmp/train/norm_gait.npy'
     #data_root = 'SUSTech1K-Released-voxel.20/090-near/01-bg_090-near_0035.npy'
-    #data_root = 'SUSTech1K-Released-voxel.20/tmp/test/01-nm_135_0408.npy'
-    #display_train(data_root)
+    data_root = 'SUSTech1K-Released-voxel.20comp2/tmp/train/00-nm_090_0888.npy'
+    display_train(data_root)
 
     #data_root = 'SUSTech1K-Released-pkl/0408/01-nm/135/00-135-LiDAR-PCDs.pkl'
     #display_raw(data_root)
@@ -236,5 +251,5 @@ if __name__ == '__main__':
     #    for item in direction:
     #        print(item)
 
-    data_root = get_parser()
-    display_array(data_root)
+    #data_root = get_parser()
+    #display_array(data_root)

@@ -1,5 +1,6 @@
 import torch
 import time
+import warnings
 import torch.nn as nn
 import torch.nn.functional as F
 from models.my_resnet import BasicBlock, ResNet
@@ -8,20 +9,30 @@ from collections import OrderedDict
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import minmax_scale
 import numpy as np
+from util.ssim import ssim
 
-class ConvBlock(nn.Module):
-    def __init__(self, channels, stride=2, downsample=None):
+class ResBlock(nn.Module):
+    def __init__(self, channels, win_size=3, stride=2, downsample=None, sample_dim=3):
         self.stride, self.channels = stride, channels
         super().__init__()
-        self.norm_func = nn.BatchNorm3d
+        if sample_dim == 2:
+            self.Conv = nn.Conv2d
+            self.norm_func = nn.BatchNorm2d
+        elif sample_dim == 3:
+            self.Conv = nn.Conv3d
+            self.norm_func = nn.BatchNorm3d
+        else:
+            raise NotImplementedError(sample_dim)
+        if isinstance(win_size, int):
+            win_size = [win_size]*sample_dim
         self.bn1 = self.norm_func(channels[1])
         self.bn2 = self.norm_func(channels[1])
         self.relu = nn.ReLU(inplace=True)
-        self.conv1 = nn.Conv3d(channels[0], channels[1], 3, stride=stride, padding=1)
-        self.conv2 = nn.Conv3d(channels[1], channels[1], 3, stride=1, padding=1)
+        self.conv1 = self.Conv(channels[0], channels[1], win_size, stride=stride, padding=[int((k-1)/2) for k in win_size])
+        self.conv2 = self.Conv(channels[1], channels[1], win_size, stride=1, padding='same')
         if downsample == None:
             self.downsample = nn.Sequential(
-                    nn.Conv3d(channels[0], channels[1], 1, stride=stride),
+                    self.Conv(channels[0], channels[1], 1, stride=stride),
                     self.norm_func(channels[1]))
                     #nn.MaxPool3d(kernel_size=stride, stride=stride))
         else:
@@ -128,61 +139,123 @@ class LayerCNN(nn.Module):
         #return torch.transpose(out.view(n, h, c, w, l), 1, 2)
         return out
 
-class GaitNorm(nn.Module):
-    def __init__(self, io_channel):
-        mid_channel = io_channel*2
-        trans_channel = mid_channel*2
+class Unet(nn.Module):
+    def __init__(self):
         super().__init__()
-        self.downstream = nn.Sequential(
-                nn.Conv3d(io_channel, mid_channel, 3, padding=1),
-                nn.BatchNorm3d(mid_channel),
+
+    def create_down(self, in_channel, out_channel):
+        block = nn.Sequential(
+            nn.MaxPool3d(2),
+            nn.Conv3d(in_channel, out_channel, 3, padding=1),
+            nn.BatchNorm3d(out_channel),
+            nn.ReLU(inplace=True),
+            nn.Conv3d(out_channel, out_channel, 3, padding=1),
+            nn.BatchNorm3d(out_channel),
+            nn.ReLU(inplace=True)
+            )
+        return block
+
+    def create_up(self, in_channel, out_channel):
+        block = nn.Sequential(
+            nn.Conv3d(in_channel*2, in_channel, 3, padding=1),
+            nn.BatchNorm3d(in_channel),
+            nn.ReLU(inplace=True),
+            nn.Conv3d(in_channel, in_channel, 3, padding=1),
+            nn.BatchNorm3d(in_channel),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose3d(in_channel, out_channel, kernel_size=2, stride=2)
+            )
+        return block
+
+    def create_trans(self, in_channel, trans_channel):
+        block = nn.Sequential(
+            nn.MaxPool3d(2),
+            nn.Conv3d(in_channel, trans_channel, 3, padding=1),
+            nn.BatchNorm3d(trans_channel),
+            nn.ReLU(inplace=True),
+            nn.Conv3d(trans_channel, trans_channel, 3, padding=1),
+            nn.BatchNorm3d(trans_channel),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose3d(trans_channel, in_channel, kernel_size=2, stride=2)
+            )
+        return block
+
+class GaitNorm(nn.Module):
+    def __init__(self, io_channel, part_num=16):
+        self.part_num = part_num
+        super().__init__()
+        self.unet = Unet()
+        self.down1 = self.unet.create_down(64, 128)
+        self.down2 = self.unet.create_down(128, 256)
+        #self.down3 = unet.create_down(256,512)
+        self.trans = self.unet.create_trans(256, 512)
+        #self.up3 = unet.create_up(512, 256)
+        self.up2 = self.unet.create_up(256, 128)
+        self.up1 = self.unet.create_up(128, 64)
+        self.outconv = nn.Sequential(
+                nn.Conv3d(128, 64, 3, padding=1),
+                nn.BatchNorm3d(64),
                 nn.ReLU(inplace=True),
-                nn.Conv3d(mid_channel, mid_channel, 3, padding=1),
-                nn.BatchNorm3d(mid_channel),
-                nn.ReLU(inplace=True)
-                )
-        self.trans = nn.Sequential(
-                nn.MaxPool3d(2),
-                nn.Conv3d(mid_channel, trans_channel, 3, padding=1),
-                nn.BatchNorm3d(trans_channel),
+                nn.Conv3d(64, 64, 3, padding=1),
+                nn.BatchNorm3d(64),
                 nn.ReLU(inplace=True),
-                nn.Conv3d(trans_channel, trans_channel, 1),
-                nn.BatchNorm3d(trans_channel),
-                nn.ReLU(inplace=True)
                 )
-        self.up = nn.ConvTranspose3d(trans_channel, mid_channel, kernel_size=2, stride=2)
-        self.upstream = nn.Sequential(
-                nn.Conv3d(mid_channel*2, mid_channel, 3, padding=1),
-                nn.BatchNorm3d(mid_channel),
-                nn.ReLU(inplace=True),
-                nn.Conv3d(mid_channel, mid_channel, 3, padding=1),
-                nn.BatchNorm3d(mid_channel),
-                nn.ReLU()
-                )
-        self.outlayer = nn.Conv3d(mid_channel, io_channel, 1)
+        self.relu = nn.ReLU(inplace=True)
+        #self.outconv = nn.Sequential(
+        #        nn.Conv3d(64, 64, 1),
+        #        nn.BatchNorm3d(64),
+        #        nn.ReLU(inplace=True)
+        #        )
         #self.cosim = nn.CosineSimilarity()
-        self.mae = nn.HuberLoss()
 
         #self.vis_feats = {}
 
-    def forward(self, x, batch_size, part_num=16, training=True):
-        x = self.downstream(x) #[n+ref, c, h, w, l]
-        identity = x[:batch_size]
-        x = self.trans(x) #[n+ref, c, h, w, l]
-        out = self.up(x[:batch_size])
+    def forward(self, x, batch_size, training=True):
+        '''
+            x   : [2n/n, c, h, w, l]
+            out : [n, c, h, w, l]
+        '''
+        n = x.shape[0]
+
         if training:
-            n, c = x.shape[:2]
-            assert n == batch_size*2, "Number of samples and references should be identical"
-            feat = torch.mean(x.view(n, c, part_num, -1), dim=-1) #[n+ref, c, p]
-            #penalty = self.cosim(feat[:batch_size], feat[batch_size:]).transpose(0,1) #[p, n]
-            dists = self.ComputeDistance(feat, batch_size) #[p, n*ref]
-            penalty = self.Reducer(dists) #[1]
-            #penalty = self.mae(feat[:batch_size], feat[batch_size:])
+            ref = x[batch_size:]
+            x = x[:batch_size]
+
+        identity1 = x
+        x = self.down1(x) #[n, 2c, h/2, w/2, l/2]
+        identity2 = x
+        x = self.down2(x) #[n, 4c, h/4, w/4, l/4]
+        identity3 = x
+        out = self.trans(x) #[n, 4c, h/4, w/4, l/4]
+        out = self.up2(torch.cat([identity3, out], dim=1)) #[n, 2c, h/2, w/2, l/2]
+        out = self.up1(torch.cat([identity2, out], dim=1)) #[n, c, h, w, l]
+        out = self.outconv(torch.cat([identity1, out], dim=1)) #[n, c, h, w, l]
+        #out = self.up2(out)
+        #out = self.up1(out)
+
+        #identity1 = out
+        #out = self.outconv(out)
+        #out = self.relu(out+identity1)
+
+        #feat = feats[:batch_size]
+        #ref = feats[batch_size:]
+        if training:
+            assert n == batch_size*2, "Number of samples ({}) and references ({}) should be identical".format(batch_size, n-batch_size)
+            penalty = self.get_penalty(out, ref)
         else:
             penalty = 0
-        out = self.upstream(torch.cat([identity, out], dim=1))
-        out = self.outlayer(out)
         return out, penalty
+
+    def get_penalty(self, feat, ref):
+        #n, c = feat.shape[:2]
+        #feat = torch.mean(feat.view(n, c, part_num, -1), dim=-1) #[n+ref, 4c, p]
+
+        #penalty = self.cosim(feat[:batch_size], feat[batch_size:]).transpose(0,1) #[p, n]
+        #dists = self.ComputeDistance(feat, batch_size) #[p, n*ref]
+        #penalty = self.Reducer(dists) #[1]
+        feat, ref = self.Partition(feat), self.Partition(ref) #default setup: [4,2,2]
+        penalty = self.SSIM(feat, ref, partition=True)
+        return penalty
 
     def Reducer(self, penalty):
         eps = 10e-9
@@ -191,6 +264,14 @@ class GaitNorm(nn.Module):
         p_mean = p_sum/(num+eps)
         p_mean[num == 0] = 0
         return p_mean.mean()
+
+    def NonzeroMAE(self, feat, ref, eps=1e-6):
+        differ = torch.abs(feat-ref)
+        nonzero_d = differ[differ>eps]
+        if len(nonzero_d) > 0:
+            return (torch.mean(nonzero_d) + torch.max(differ.view(feat.shape[0], -1), -1)[0].mean())/2
+        else:
+            return torch.tensor(0).type_as(feat)
 
     def ComputeDistance(self, feat, batch_size):
         """
@@ -207,6 +288,35 @@ class GaitNorm(nn.Module):
         dist = x2 + y2 - 2 * inner
         dist = torch.sqrt(F.relu(dist) + eps)  # [p, n, ref]
         return dist.view(dist.shape[0], -1)
+
+    def SSIM(self, x, y, win_size=5, win_sigma=1.5, partition=False):
+        '''
+        x/y     : [n, c, h, w, l]
+        output  : []
+        '''
+        L = max(x.max(),y.max())-min(x.min(),y.min())
+        with torch.no_grad():
+            output = 1 - ssim(x, y, data_range=L, size_average=False, win_size=win_size, win_sigma=win_sigma)
+        if output.min() < 0:
+            warnings.warn('Got a negtive value ({}) in SSIM loss!'.format(output.min()))
+        if partition:
+            #return output.max()
+            return output.sum()
+        else:
+            return output.mean()
+
+    def Partition(self, embeds, parts=[4,2,2]):
+        '''
+        embeds: [n, c, h, w, l]
+        output: [p, n*c, h, w, l]
+        '''
+        shape = embeds.shape
+        assert len(shape) == 5, 'Input should have shape of [n, c, h, w, l], but got {} dimensions'.format(len(embeds.shape))
+        n, c, h, w, l = shape
+        seg_z, seg_x, seg_y = [int(shape[i-3]/parts[i]) for i in range(3)]
+        assert (h == seg_z*parts[0]) and (w == seg_x*parts[1]) and (l == seg_y*parts[2]), 'Embeding size ({}) should be divisable by partition number ({}) in all dimensions'.format([h, w, l], parts)
+        part_embeds = torch.stack([embeds[...,seg_z*z:seg_z*(z+1),seg_x*x:seg_x*(x+1),seg_y*y:seg_y*(y+1)] for y in range(parts[2]) for x  in range(parts[1]) for z in range(parts[0])])
+        return part_embeds.view(-1,n*c,seg_z,seg_x,seg_y) #[p, n*c, h/p_z, w/p_x, l/p_y]
 
 class ScaleFusionCNN(nn.Module):
     def __init__(self, in_channel=32, out_channel=64, batch_size=8):
@@ -321,7 +431,7 @@ class HPP():
 
     def __call__(self, x):
         """
-            x  : [n, c, h, w, l]
+            x  : [n, c, ...]
             ret: [n, c, p] 
         """
         n, c = x.size()[:2]
@@ -533,9 +643,9 @@ class LossAggregator(nn.Module):
         self.CE_weight = 0.1#nn.Parameter(torch.Tensor(1))
         self.Norm_weight = 1
         #self.miner = miners.TripletMarginMiner(margin=0.2, type_of_triplets="all")
-        self.scale = 16
+        self.scale = 1
 
-    def forward(self, TP_feat, CE_feat, labels, Norm_loss=0):
+    def forward(self, TP_feat, CE_feat, labels, Norm_loss=torch.tensor(0)):
         #TP_feat = TP_feat.view(TP_feat.shape[0], -1)
         #d = CE_feat.shape[-1]
 
@@ -554,9 +664,10 @@ class LossAggregator(nn.Module):
 
         #print(penalty)
         loss_sum = TP_loss.mean()*self.TP_weight + CE_loss.mean()*self.CE_weight + Norm_loss*self.Norm_weight
+        #loss_sum = TP_loss.mean()*(1+Norm_loss)*self.TP_weight + CE_loss.mean()*self.CE_weight
         #end = time.time()
         #print('tp time: {}, ce time: {}, total: {}'.format(round(tp_end-st, 4), round(ce_end-tp_end, 4), round(end-st, 4)))
-        return [loss_sum,TP_loss.mean(),CE_loss.mean(), Norm_loss.mean()], mined_triplets
+        return [loss_sum, TP_loss.mean(), CE_loss.mean(), Norm_loss], mined_triplets
 
 class Odict(OrderedDict):
     def append(self, odict):
@@ -647,7 +758,7 @@ class TripletLoss(BaseLoss):
         #dist_ed = time.time()
         ap_dist, an_dist = self.Convert2Triplets(labels, ref_label, dist)
         #triplet_ed = time.time()
-        dist_diff = (ap_dist - an_dist).view(dist.size(0), -1)
+        dist_diff = (ap_dist - an_dist).view(dist.size(0), -1) #[p, ...]
         #differ_ed = time.time()
         loss = torch.pow(self.balance * F.relu(dist_diff + self.margin), self.lamda) * self.scale
 
@@ -689,14 +800,15 @@ class TripletLoss(BaseLoss):
         matches = (row_labels.unsqueeze(1) ==
                    clo_label.unsqueeze(0)).bool()  # [n_r, n_c]
         diffenc = torch.logical_not(matches)  # [n_r, n_c]
+        matches = matches.fill_diagonal_(False)
         #index_ed = time.time()
         p, n, _ = dist.size()
         #matches_id = matches.nonzero(as_tuple=False)
         #diffenc_id = diffenc.nonzero(as_tuple=False)
         #ap_dist = dist[:, matches_id[:,0], matches_id[:,1]].view(p,n,-1,1)
         #an_dist = dist[:, diffenc_id[:,0], diffenc_id[:,1]].view(p,n,1,-1)
-        ap_dist = dist[:, matches].view(p, n, -1, 1)
-        an_dist = dist[:, diffenc].view(p, n, 1, -1)
+        ap_dist = dist[:, matches].view(p, -1, 1)
+        an_dist = dist[:, diffenc].view(p, 1, -1)
         #ed = time.time()
         #print('map time: {}, extract time: {}'.format(round(index_ed-st, 4), round(ed-index_ed, 4)))
         return ap_dist, an_dist

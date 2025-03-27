@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 import torch
 from torch.cuda.amp import GradScaler, autocast
 
-sys.path.append('/home/sx-zhang/work/GaitCloud-master')
-sys.path.append('/home/sx-zhang/work/GaitCloud-master/util')
+sys.path.append('./')
+sys.path.append('util')
 from util import config
 from util.gait_database import GaitDataset
 import models
@@ -20,15 +20,17 @@ import models
 def get_parser():
     parser = argparse.ArgumentParser(description='Load model parameters for inference')
     parser.add_argument('--time', type=str, help='training timestamp')
+    parser.add_argument('--visual', type=bool, default=False, help='if visualization')
     timestamp = parser.parse_args().time
-    cfg = config.load_cfg_from_cfg_file('config/SUSTech1k/SUSTech1k_TestAll_repro.yaml')#{}/configfile{}.yaml'.format(timestamp, timestamp))
-    return cfg, timestamp
+    visual = parser.parse_args().visual
+    cfg = config.load_cfg_from_cfg_file('[{}]/config.yaml'.format(timestamp))
+    return cfg, timestamp, visual
 
 def main():
-    args, timestamp = get_parser()
+    args, timestamp, visual = get_parser()
     print('config loaded')
-    data_root = '/home/sx-zhang/SUSTech1K/inference/dev_{}'
-    data_list = [item[:-4] for item in sorted(os.listdir(data_root.format(0.01)))]
+    data_root = args.data_root+'/test'
+    data_list = [item[:-4] for item in sorted(os.listdir(data_root))]
     target = list(dict.fromkeys([name[-4:] for name in data_list]))
     args.target = np.arange(250)
     args.timestamp = timestamp
@@ -39,13 +41,14 @@ def main():
     device = torch.device('cuda')
     args.dtype = torch.float
 
+    print('loading {} in {}'.format(args.structure, timestamp))
     Model = getattr(models, args.structure)
     model = Model(args, args.feature)
-    model.load_state_dict(torch.load('{}/best_view.pth'.format(args.timestamp)))
+    model.load_state_dict(torch.load('[{}]/best_view.pth'.format(timestamp)))
     model.eval().to(device)
-    if os.path.exists('{}/best_var.pth'.format(args.timestamp)):
+    if os.path.exists('[{}]/best_var.pth'.format(args.timestamp)):
         model_var = Model(args, args.feature)
-        model_var.load_state_dict(torch.load('{}/best_var.pth'.format(args.timestamp)))
+        model_var.load_state_dict(torch.load('[{}]/best_var.pth'.format(timestamp)))
         model_var.eval().to(device)
     else:
         model_var = None
@@ -59,88 +62,118 @@ def main():
     #for noise in [0,0.005,0.01,0.015,0.02,0.025,0.03,0.035,0.04,0.045,0.05,0.055,0.06,0.065,0.07,0.075,0.08,0.085,0.09,0.095,0.1]:
     for noise in [0]:
         print('set noise to {}'.format(noise))
-        test_set = GaitDataset(split='inference', data_root=data_root.format(noise), args=args, datalist=data_list)
-        test_loader = torch.utils.data.DataLoader(test_set, batch_size=256, num_workers=args.workers, collate_fn=Collate_fn, drop_last=False)
-        test_embeddings = []
-        test_labels = []
-        test_targets = []
-
-        for batch_idx, (data, labels, metainfo) in enumerate(test_loader):
-            if batch_idx%20 == 0:
-                print('{} sample calculated'.format(batch_idx*256))
-            data, labels, positions = data.to(device).to(args.dtype), labels.to(device).to(args.dtype), metainfo[0].to(device).to(args.dtype)
-            with torch.no_grad():
+        if visual:
+            data_root = args.data_root
+            trainv_set = GaitDataset(split='inference', data_root=os.path.join(data_root,'train'), args=args, datalist=args.visual_train_names)
+            trainv_loader = torch.utils.data.DataLoader(trainv_set, batch_size=8, num_workers=args.workers, collate_fn=Collate_fn, drop_last=False)
+            testv_set = GaitDataset(split='inference', data_root=os.path.join(data_root,'test'), args=args, datalist=args.visual_test_names)
+            testv_loader = torch.utils.data.DataLoader(testv_set, batch_size=8, num_workers=args.workers, collate_fn=Collate_fn, drop_last=False)
+            #train visual
+            for batch_idx, (data, labels, metainfo) in enumerate(trainv_loader):
+                data, labels, positions = data.to(device).to(args.dtype), labels.to(device).to(args.dtype), metainfo[0].to(device).to(args.dtype)
                 with autocast(dtype=torch.bfloat16):
-                    embeddings, _ = model(data, labels, training=False, positions=positions, symbol=args.symbol)
-            test_embeddings.append(embeddings.detach().to('cpu'))
-            test_labels.append(labels.detach().to('cpu'))
-            test_targets += metainfo[1]
-        test_embeddings = torch.cat(test_embeddings)
-        test_labels = torch.cat(test_labels)
-        print('embeddings calculation complete')
+                    _, visual_embed = model(data, labels, training=False, positions=positions, symbol=args.symbol, visual=True)
+                for name in metainfo[1]:
+                    visual_save(args.timestamp, 'best', name, visual_embed, metainfo[1].index(name))
+            #test visual
+            for batch_idx, (data, labels, metainfo) in enumerate(testv_loader):
+                data, labels, positions = data.to(device).to(args.dtype), labels.to(device).to(args.dtype), metainfo[0].to(device).to(args.dtype)
+                with autocast(dtype=torch.bfloat16):
+                    _, visual_embed = model(data, labels, training=False, positions=positions, symbol=args.symbol, visual=True)
+                for name in metainfo[1]:
+                    visual_save(args.timestamp, 'best', name, visual_embed, metainfo[1].index(name))
+        else:
+            test_set = GaitDataset(split='inference', data_root=data_root.format(noise), args=args, datalist=data_list)
+            test_loader = torch.utils.data.DataLoader(test_set, batch_size=256, num_workers=args.workers, collate_fn=Collate_fn, drop_last=False)
+            test_embeddings = []
+            test_labels = []
+            test_targets = []
 
-        #view
-        view_accuracy = []
-        view_dist = []
-        for gallery in args.splits_view:
-            gallery_targets = [item for item in test_targets if gallery in item]
-            gallery_embeddings = test_embeddings[[test_targets.index(item) for item in gallery_targets]]
-            gallery_labels = test_labels[[test_targets.index(item) for item in gallery_targets]]
-            for probe in args.splits_view:
-                if not gallery == probe:
-                    probe_targets = [item for item in test_targets if probe in item]
-                    probe_embeddings = test_embeddings[[test_targets.index(item) for item in probe_targets]]
-                    probe_labels = test_labels[[test_targets.index(item) for item in probe_targets]]
-                    accuracy, _ = accuracy_calculator.rank_1_accuracy(probe_embeddings, probe_labels, gallery_embeddings, gallery_labels)
-                    view_accuracy.append(accuracy)
-                    view_dist.append(len(probe_targets))
-        mean_view.append(sum([view_accuracy[i]*view_dist[i] for i in range(len(view_dist))])/sum(view_dist))
-        print('view evaluation complete')
-
-        #variance
-        var_accuracy = []
-        var_dist = []
-        if not model_var == None: #best_variance model is not best_view
             for batch_idx, (data, labels, metainfo) in enumerate(test_loader):
                 if batch_idx%20 == 0:
                     print('{} sample calculated'.format(batch_idx*256))
                 data, labels, positions = data.to(device).to(args.dtype), labels.to(device).to(args.dtype), metainfo[0].to(device).to(args.dtype)
                 with torch.no_grad():
                     with autocast(dtype=torch.bfloat16):
-                        embeddings, _ = model_var(data, labels, training=False, positions=positions, symbol=args.symbol)
+                        embeddings, _ = model(data, labels, training=False, positions=positions, symbol=args.symbol)
                 test_embeddings.append(embeddings.detach().to('cpu'))
                 test_labels.append(labels.detach().to('cpu'))
                 test_targets += metainfo[1]
-
             test_embeddings = torch.cat(test_embeddings)
             test_labels = torch.cat(test_labels)
+            print('embeddings calculation complete')
 
-        gallery_targets = [item for item in test_targets if '00-nm' in item]
-        gallery_embeddings = test_embeddings[[test_targets.index(item) for item in gallery_targets]]
-        gallery_labels = test_labels[[test_targets.index(item) for item in gallery_targets]]
-        fail_results = {}
-        fail_results_view = {}
-        for probe in args.splits_variance:
-            if not probe == '00-nm':
-                probe_targets = [item for item in test_targets if probe in item]
-                probe_embeddings = test_embeddings[[test_targets.index(item) for item in probe_targets]]
-                probe_labels = test_labels[[test_targets.index(item) for item in probe_targets]]
-                accuracy, failed_info = accuracy_calculator.rank_1_accuracy(probe_embeddings, probe_labels, gallery_embeddings, gallery_labels)
-                fail_results[probe], fail_results_view[probe] = fail_analyze(failed_info, probe_targets, gallery_targets)
-                var_accuracy.append(accuracy)
-                var_dist.append(len(probe_targets))
-        mean_var.append(sum([var_accuracy[i]*var_dist[i] for i in range(len(var_dist))])/sum(var_dist))
-        print('variance evaluation complete')
-    print('mean_view\n', mean_view)
-    print('mean_var\n', mean_var)
+            #view
+            view_accuracy = []
+            view_dist = []
+            for gallery in args.splits_view:
+                gallery_targets = [item for item in test_targets if gallery in item]
+                gallery_embeddings = test_embeddings[[test_targets.index(item) for item in gallery_targets]]
+                gallery_labels = test_labels[[test_targets.index(item) for item in gallery_targets]]
+                for probe in args.splits_view:
+                    if not gallery == probe:
+                        probe_targets = [item for item in test_targets if probe in item]
+                        probe_embeddings = test_embeddings[[test_targets.index(item) for item in probe_targets]]
+                        probe_labels = test_labels[[test_targets.index(item) for item in probe_targets]]
+                        accuracy, _ = accuracy_calculator.rank_1_accuracy(probe_embeddings, probe_labels, gallery_embeddings, gallery_labels)
+                        view_accuracy.append(accuracy)
+                        view_dist.append(len(probe_targets))
+            mean_view.append(sum([view_accuracy[i]*view_dist[i] for i in range(len(view_dist))])/sum(view_dist))
+            print('view evaluation complete')
 
-    with open('{}/fail_analysis.yaml'.format(args.timestamp), 'w') as f:
-        yaml.dump(fail_results, f, allow_unicode=True, default_flow_style=False)
-    f.close()
-    with open('{}/fail_analysis_view.yaml'.format(args.timestamp), 'w') as f:
-        yaml.dump(fail_results_view, f, allow_unicode=True, default_flow_style=False)
-    f.close()
-    #np.save('{}/robustness.npy'.format(args.timestamp), np.array([mean_var, mean_view]))
+            #variance
+            var_accuracy = []
+            var_dist = []
+            if not model_var == None: #best_variance model is not best_view
+                for batch_idx, (data, labels, metainfo) in enumerate(test_loader):
+                    if batch_idx%20 == 0:
+                        print('{} sample calculated'.format(batch_idx*256))
+                    data, labels, positions = data.to(device).to(args.dtype), labels.to(device).to(args.dtype), metainfo[0].to(device).to(args.dtype)
+                    with torch.no_grad():
+                        with autocast(dtype=torch.bfloat16):
+                            embeddings, _ = model_var(data, labels, training=False, positions=positions, symbol=args.symbol)
+                    test_embeddings.append(embeddings.detach().to('cpu'))
+                    test_labels.append(labels.detach().to('cpu'))
+                    test_targets += metainfo[1]
+
+                test_embeddings = torch.cat(test_embeddings)
+                test_labels = torch.cat(test_labels)
+
+            gallery_targets = [item for item in test_targets if '00-nm' in item]
+            gallery_embeddings = test_embeddings[[test_targets.index(item) for item in gallery_targets]]
+            gallery_labels = test_labels[[test_targets.index(item) for item in gallery_targets]]
+            fail_results = {}
+            fail_results_view = {}
+            for probe in args.splits_variance:
+                if not probe == '00-nm':
+                    probe_targets = [item for item in test_targets if probe in item]
+                    probe_embeddings = test_embeddings[[test_targets.index(item) for item in probe_targets]]
+                    probe_labels = test_labels[[test_targets.index(item) for item in probe_targets]]
+                    accuracy, failed_info = accuracy_calculator.rank_1_accuracy(probe_embeddings, probe_labels, gallery_embeddings, gallery_labels)
+                    fail_results[probe], fail_results_view[probe] = fail_analyze(failed_info, probe_targets, gallery_targets)
+                    var_accuracy.append(accuracy)
+                    var_dist.append(len(probe_targets))
+            mean_var.append(sum([var_accuracy[i]*var_dist[i] for i in range(len(var_dist))])/sum(var_dist))
+            print('variance evaluation complete')
+    if not visual:
+        print('mean_view\n', mean_view)
+        print('mean_var\n', mean_var)
+
+        with open('[{}]/fail_analysis.yaml'.format(args.timestamp), 'w') as f:
+            yaml.dump(fail_results, f, allow_unicode=True, default_flow_style=False)
+        f.close()
+        with open('[{}]/fail_analysis_view.yaml'.format(args.timestamp), 'w') as f:
+            yaml.dump(fail_results_view, f, allow_unicode=True, default_flow_style=False)
+        f.close()
+        #np.save('{}/robustness.npy'.format(args.timestamp), np.array([mean_var, mean_view]))
+
+def visual_save(timestamp, epoch, name, embeds, idx):
+    print('record {}'.format(name))
+    if not os.path.exists('[{}]/{}'.format(timestamp, name)):
+        os.system('mkdir [{}]/{}'.format(timestamp, name))
+    for item in embeds.keys():
+        #print(len(visual_embed[item]), len(metainfo[1]))
+        np.save('[{}]/{}/{}_{}.npy'.format(timestamp, name, epoch, item), embeds[item][idx])
 
 def fail_analyze(failed_info, probe_names, gallery_names):
     results = {}
@@ -199,7 +232,7 @@ def draw_distribution(results, results_view, timestamp):
         ax_c.bar(x_locs+width/2, count, width, label='Count', color='tab:orange', zorder=2)
         ax_c.set_ylabel('Count')
         fig.legend()
-        plt.savefig('{}/analysis/{}.png'.format(timestamp, attr))
+        plt.savefig('[{}]/analysis/{}.png'.format(timestamp, attr))
         plt.close()
 
         #view
@@ -217,7 +250,7 @@ def draw_distribution(results, results_view, timestamp):
         ax_c.bar(x_locs+width/2, count, width, label='Count', color='tab:orange')
         ax_c.set_ylabel('Count')
         fig.legend()
-        plt.savefig('{}/analysis/{}_view.png'.format(timestamp, attr))
+        plt.savefig('[{}]/analysis/{}_view.png'.format(timestamp, attr))
         plt.close()
 
 def addlabels(locs, width, y):
@@ -231,16 +264,17 @@ def draw_robustness(var_accu, view_accu, timestamp):
     plt.plot(noise, np.asarray(var_accu), label = 'variance')
     plt.plot(noise, np.asarray(view_accu), label = 'view')
     fig.legend()
-    plt.savefig('{}/robustness.png'.format(timestamp))
+    plt.savefig('[{}]/robustness.png'.format(timestamp))
     plt.close()
 
 if __name__ == '__main__':
-    #main()
-    timestamp = '[2024-10-11_07:43:50.842896]'
-    with open('{}/fail_analysis.yaml'.format(timestamp), 'r') as f:
-        results = yaml.safe_load(f)
-    f.close()
-    with open('{}/fail_analysis_view.yaml'.format(timestamp), 'r') as f:
-        results_view = yaml.safe_load(f)
-    f.close()
-    draw_distribution(results, results_view, timestamp)
+    main()
+
+    #timestamp = '[2024-10-11_07:43:50.842896]'
+    #with open('{}/fail_analysis.yaml'.format(timestamp), 'r') as f:
+    #    results = yaml.safe_load(f)
+    #f.close()
+    #with open('{}/fail_analysis_view.yaml'.format(timestamp), 'r') as f:
+    #    results_view = yaml.safe_load(f)
+    #f.close()
+    #draw_distribution(results, results_view, timestamp)

@@ -8,18 +8,6 @@ import struct
 import time
 from sklearn.cluster import DBSCAN
 
-res_x = 0.03125
-res_y = 0.03125
-res_z = 0.03125
-
-width_x = 1.25
-width_y = 1.25
-width_z = 2
-
-w = int(width_x/res_x)
-l = int(width_y/res_y)
-h = int(width_z/res_z)
-
 def frame_rotation(frame, alpha):
     """
     input: frame [n, 3]
@@ -34,13 +22,19 @@ def frame_rotation(frame, alpha):
         frame_trans[index] = np.matmul(mat_R, point)
     return frame_trans
 
-def frame_voxelize(frame, ground):
+def frame_voxelize(frame, ground, box_size, res):
     """
     input: frame [n, 3]
     output: voxelized_frame [x, y, z]
     """
-    global res_x, res_y, res_z, w, l, h, width_x, width_y, width_z
-    counter = 1
+    width_x, width_y, width_z = box_size
+    if isinstance(res, list):
+        res_x, res_y, res_z = res
+    else:
+        res_x, res_y, res_z = res, res, res
+    w, l, h = width_x/res_x, width_y/res_y, width_z/res_z
+    assert w==int(w) and l==int(l) and h==int(h), 'box_size ({}) should be divisable by resolustion ({})'.format(box_size, res)
+    w, l, h = int(w), int(l), int(h)
 
     #clustering
     if type(frame) != 'numpy.ndarray':
@@ -79,7 +73,7 @@ def frame_voxelize(frame, ground):
     masked_y = coor_y[bound_mask]
     masked_z = coor_z[bound_mask]
     masked_frame = frame[bound_mask]
-    frame_vox[masked_z, masked_x, masked_y] = np.column_stack((masked_frame[:,2], masked_frame[:,0], masked_frame[:,1], np.full(masked_frame.shape[0], counter)))
+    frame_vox[masked_z, masked_x, masked_y] = np.column_stack((masked_frame[:,2], masked_frame[:,0], masked_frame[:,1], np.full(masked_frame.shape[0], 1)))
     #for i, point in enumerate(frame):
     #    if point.any() != 0:
     #        coor_x = int(((point[0]-center_x)//res_x)+w/2-1)
@@ -91,7 +85,7 @@ def frame_voxelize(frame, ground):
     #                frame_vox[coor_z, coor_x, coor_y] = [point[2], point[0], point[1], counter]#(labels[labels!=-1][i]+1)*256/(unique_labels[-1]+1)]
     #            except IndexError:
     #                pass
-    return frame_vox, frame_depth#point_num#, np.delete(frame_flat, -1, -1) #min_xv, max_xv, min_yv, max_yv, min_zv, max_zv 
+    return frame_vox, frame_depth #frame_vox[z, x, y]
 
 def assign_ID(frame, ch_cal):
     """

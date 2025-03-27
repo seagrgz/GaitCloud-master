@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.module import ConvBlock, FlatIn, ScaleFusionCNN, HPP, SeparateFCs, SeparateBNNecks, LossAggregator
+from models.module import ResBlock, FlatIn, ScaleFusionCNN, HPP, SeparateFCs, SeparateBNNecks, LossAggregator
 import numpy as np
 
 class TestEncoder(nn.Module):
@@ -10,9 +10,9 @@ class TestEncoder(nn.Module):
         self.layerencoder = FlatIn(32)
         self.scalencoder = ScaleFusionCNN()
         self.encoder = nn.Sequential(
-                ConvBlock([64,128], stride=2),
-                ConvBlock([128,256], stride=2),
-                ConvBlock([256,512], stride=1))
+                ResBlock([64,128], stride=2),
+                ResBlock([128,256], stride=2),
+                ResBlock([256,512], stride=1))
         self.FCs = SeparateFCs()
         self.BNNecks = SeparateBNNecks(class_num=len(args.target))
         self.HPP = HPP()

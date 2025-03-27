@@ -12,12 +12,6 @@ import sys
 import time
 from pretreatment import frame_voxelize, frame_rotation, assign_ID, frame_dilution, add_noise, frame_clean
 
-#dataset setup
-tfusion = False
-w = 40
-l = 40
-h = 64
-
 def get_parser():
     parser = argparse.ArgumentParser(description='Specify split and viewpoint to run point cloud voxelization')
     parser.add_argument('-s','--split',  type=str)
@@ -142,8 +136,17 @@ def random_head_sample(seq, frame_num):
     sampled_frames = np.stack(sampled_frames)
     return sampled_frames
 
-def create_SUSTech(dst, frame_num, split=None, viewpoint=None, dilution=1, noise=0.02):
-    global w, h, l, tfusion
+def create_SUSTech(dst, 
+        frame_num, 
+        box_size,
+        res,
+        split=None, 
+        viewpoint=None, 
+        dilution=1, 
+        noise=0, 
+        counter=1, 
+        compress=False
+        tfusion=False):
     if split==None and viewpoint==None:
         split, viewpoint = get_parser()
     src = 'SUSTech1K-Released-pkl'
@@ -189,8 +192,8 @@ def create_SUSTech(dst, frame_num, split=None, viewpoint=None, dilution=1, noise
                                 if len(data_frame) > 0:
                                     if noise > 0:
                                         data_frame = add_noise(data_frame, noise)
-                                    data_frame = frame_rotation(data_frame, alpha)
-                                    voxel_frame, frame_depth = frame_voxelize(data_frame, ground)
+                                    data_frame = frame_rotation(data_frame, alpha) #Rotation
+                                    voxel_frame, frame_depth = frame_voxelize(data_frame, ground, box_size, res) #Voxelization
                                     voxel_frame[...,-1] = np.sqrt(np.sum(voxel_frame[...,:3]**2, axis=-1))
                                     voxel_sample.append(voxel_frame[...,-1])
                                     sample_depth.append(frame_depth)
@@ -201,19 +204,24 @@ def create_SUSTech(dst, frame_num, split=None, viewpoint=None, dilution=1, noise
                             continue
                         else:
                             #sampling frames from voxelized data
-                            voxel_sample = np.stack(voxel_sample) #(T, h, w, l)
-                            sampled_frames = random_head_sample(voxel_sample, frame_num)
+                            sampled_frames = random_head_sample(np.stack(voxel_sample), frame_num) #(T, h, w, l)
 
                             if tfusion:
                                 centroid = sum(sample_depth)/len(sample_depth)
                                 #sampled_frames[sampled_frames!=0] = 1
-                                voxel_sample = np.asarray([sampled_frames.astype('int8'), centroid], dtype=object)
-                                np.save(save_path, voxel_sample, allow_pickle=True) #one sample saved
+                                sample_final = np.asarray([sampled_frames.astype('int8'), centroid], dtype=object)
+                                np.save(save_path, sample_final, allow_pickle=True) #one sample saved
                             else:
-                                voxel_stack_sample = np.count_nonzero(sampled_frames, axis=0)
+                                sample_final = np.count_nonzero(sampled_frames, axis=0)*counter #[z, x, y]
                                 centroid = sum(sample_depth)/len(sample_depth)
-                                voxel_stack_sample = np.asarray([voxel_stack_sample.astype('int8'), centroid], dtype=object)
-                                np.save(save_path, voxel_stack_sample, allow_pickle=True) #one sample saved
+                                if compress:
+                                    seg = sample_final.shape[2]/compress
+                                    assert seg == int(seg), 'Box length ({}) should be divisable by the number of segments ({})'.format(sample.shape[2], compress)
+                                    seg = int(seg)
+                                    sample_final = np.stack([np.sum(sample_final[...,i*seg:(i+1)*seg], axis=2) for i in range(compress)], axis=2)
+                                    #print(sample_final.shape)
+                                sample_final = np.asarray([sample_final.astype('int8'), centroid], dtype=object)
+                                np.save(save_path, sample_final, allow_pickle=True) #one sample saved
                             print('{}/{}: Sample {} completed'.format(viewpoint, split, sample))
                             if sample not in enable_list.keys():
                                 enable_list[sample] = enable_start

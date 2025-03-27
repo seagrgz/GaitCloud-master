@@ -2,9 +2,12 @@
 import numpy as np
 import seaborn as sn
 import pandas as pd
+import argparse
 import matplotlib.pyplot as plt
 
-data_name = '[2024-12-02_12:20:39.207604]'
+parser = argparse.ArgumentParser(description='Specify the dir name to view.')
+parser.add_argument('-t', type=str)
+data_name = parser.parse_args().t
 variance = ['00-nm', '01-nm', 'bg', 'cl', 'cr', 'ub', 'uf', 'oc', 'nt']
 #variance = ['00-nm', '01-nm', '01-bg', '01-cl', '01-cr', '01-oc', '01-ub', 'uf', 'nt']
 view = ['_000_', '000-far', '_045_', '_090_', '090-near', '_135_', '_180_', '180-far', '_225_', '_270_', '270-far', '_315_']

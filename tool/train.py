@@ -131,14 +131,13 @@ def main():
     args.timestamp = str(datetime.datetime.now()).replace(" ", "_")
     os.system('mkdir [{}]'.format(args.timestamp))
     os.system('mkdir [{}]/fail_analysis'.format(args.timestamp))
+    os.system('cp {} [{}]/config.yaml'.format(configfile, args.timestamp))
     with open(configfile, 'r') as f:
         configs = yaml.safe_load(f)
 
     if args.use_gpu and torch.cuda.is_available():
         #args.visible_gpu = list(range(torch.cuda.device_count()+1))
         os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(str(x) for x in args.train_gpu)
-    #if not args.test_split == 'test':
-    #    args.epochs = 1000
 
     if args.manual_seed is not None:
         random.seed(args.manual_seed)
@@ -166,7 +165,6 @@ def main():
             data_root = args.data_root
             splits = args.splits
             namespace = {}
-        data_list = [name for name in [item[:-4] for item in sorted(os.listdir(data_root))] if not name == 'sample_list']
         args.target = [int(name) for name in np.load(os.path.join(data_root, 'train_list.npy'))]
         #args.target_test = [int(name) for name in np.load(os.path.join(data_root, 'test_list.npy'))]
 
@@ -282,8 +280,8 @@ def main_worker(gpu, ngpus_per_node, argss, data_root, namespace, splits, config
         else:
             datasets[name] = GaitDataset(split=name, data_root=os.path.join(data_root, 'test'), args=args, datalist=namespace[name])
             dataloaders[name] = torch.utils.data.DataLoader(datasets[name], batch_size=args.batch_size_test, num_workers=args.workers, collate_fn=Collate_fn, pin_memory=True, drop_last=False)
-    referset = GaitDataset(split='ref', data_root=os.path.join(data_root, 'train'), args=args, datalist=namespace['ref'])
-    dataloaders['ref'] = torch.utils.data.DataLoader(referset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, collate_fn=Collate_fn, pin_memory=True, drop_last=True)
+    datasets['ref'] = GaitDataset(split='ref', data_root=os.path.join(data_root, 'train'), args=args, datalist=namespace['ref'])
+    dataloaders['ref'] = torch.utils.data.DataLoader(datasets['ref'], batch_size=args.batch_size, num_workers=args.workers, pin_memory=True)
 
     if args.load_checkpoint:
         args.start_epoch = checkpoint['epoch']
@@ -293,6 +291,7 @@ def main_worker(gpu, ngpus_per_node, argss, data_root, namespace, splits, config
 
     best_view = 0
     best_var = 0
+    logger.info('Train start ......')
     for epoch in range(args.start_epoch, args.epochs):
         epoch_st = time.time()
         accuracy_train, losses = metric_train(model, device, dataloaders, optimizer, epoch, args, accuracy_calculator, scheduler, scaler)
@@ -304,8 +303,17 @@ def main_worker(gpu, ngpus_per_node, argss, data_root, namespace, splits, config
         train_end = time.time()
 
         #inference
-        print('use {} for test'.format(device))
-        accuracy_val = metric_test(dataloaders, model, accuracy_calculator, args, device, splits, epoch)
+        if epoch > args.epochs*args.eval_start or (args.visual and epoch%args.visual_freq == 0):
+            print('use {} for test'.format(device))
+            accuracy_val = metric_test(dataloaders, model, accuracy_calculator, args, device, splits, epoch)
+        else:
+            accuracy_val = {}
+            for var in args.splits_variance:
+                accuracy_val[var] = 0
+            for gallery in args.splits_view:
+                accuracy_val[gallery] = {}
+                for probe in args.splits_view:
+                    accuracy_val[gallery][probe] = 0
 
         #update test accuracy
         for variance in args.splits_variance:
@@ -332,7 +340,7 @@ def main_worker(gpu, ngpus_per_node, argss, data_root, namespace, splits, config
         step_var = [accuracy_val[attr] for attr in args.splits_variance]
         mean_var = sum(step_var)/len(step_var)
         mean_view = sum(step_view)/len(step_view)
-        if epoch > 0.9*args.epochs and mean_var > best_var:
+        if epoch > args.epochs*args.eval_start and mean_var > best_var:
             if mean_view > best_view:
                 torch.save(model_state, '[{}]/best_view.pth'.format(args.timestamp))
                 os.system('rm -f [{}]/best_var.pth'.format(args.timestamp))
@@ -361,37 +369,52 @@ def metric_train(model, device, dataloaders, optimizer, epoch, args, accuracy_ca
     loss_items = [[],[],[]]
     train_loader = dataloaders['train']
     refer_loader = dataloaders['ref']
-    if args.structure == 'TestNorm':
+    if args.structure in ['TestNorm','TestNorm_re']:
+        logger.info('Loading reference samples ...')
         ref_data = []
-        ref_labels = []
-        for ref, labels, _ in refer_loader:
+        ref_names = []
+        for ref, _, metainfo in refer_loader:
             ref_data.append(ref.to(device).to(args.dtype))
-            ref_labels.append(labels.to(device).to(args.dtype))
+            ref_names += metainfo[1]
         ref_data = torch.cat(ref_data)
-        ref_labels = torch.cat(ref_labels)
+        logger.info('Reference loaded')
     for batch_idx, (data, labels, metainfo) in enumerate(train_loader):
         loop_st = time.time()
         unique_labels = torch.unique(labels)
         #logger.info('start-free memory: {}'.format(get_gpu_info()[0]['memory.free']))
         if not len(labels) == len(unique_labels):
             data, labels, positions = data.to(device).to(args.dtype), labels.to(device).to(args.dtype), metainfo[0].to(device).to(args.dtype)
-            if args.structure == 'TestNorm':
-                #ref_id = torch.randint(0, len(ref_data), tuple([args.batch_size])) #random
-                ref_candidates = [torch.nonzero(ref_labels==lb,as_tuple=True)[0] for lb in labels]
-                red_id = [random.choice(candid.tolist()) for candid in ref_candidates]
-                reference = ref_data[ref_id]
+            if args.structure in ['TestNorm','TestNorm_re']:
+                names = metainfo[1]
+                target_names = []
+                for i, name in enumerate(names):
+                    attr, vp, target = name.split('_')
+                    target_names.append('00-nm_' + vp + '_' + target)
+                reference = []
+                Id = []
+                for i, tar in enumerate(target_names):
+                    try:
+                        reference.append(ref_data[ref_names.index(tar)])
+                        Id.append(i)
+                    except ValueError:
+                        pass
+                data = data[Id]
+                labels = labels[Id]
+                reference = torch.stack(reference)
             else:
                 reference = None
             #if args.structure == 'TestNorm':
-            #    ref_data, _, _ = next(iter(refer_loader))
-            #    ref_data = data.to(device).to(args.dtype)
+            #    #ref_id = torch.randint(0, len(ref_data), tuple([args.batch_size])) #random
+            #    ref_candid_id = [torch.nonzero(ref_labels==lb,as_tuple=True)[0] for lb in labels]
+            #    ref_id = torch.cat([candid[torch.randint(len(candid), [1])] for candid in ref_candid_id])
+            #    reference = ref_data[ref_id]
             #else:
-            #    ref_data = None
+            #    reference = None
             optimizer.zero_grad()
             if args.use_bf16:
                 batch_st = time.time()
                 with autocast(dtype=torch.bfloat16):
-                    (losses, mined_triplets, embeddings), _ = model(data, ref=reference, labels=labels, positions=positions, symbol=args.symbol)
+                    (losses, mined_triplets, embeddings), visual_embed = model(data, ref=reference, labels=labels, positions=positions, symbol=args.symbol, visual=(args.visual and epoch%args.visual_freq == 0))
                     forward_end = time.time()
                     loss = losses[0]
                     logger.info("Epoch {} Iteration {}: Sum_loss = {}, TP_loss = {}, CE_loss = {}, Mined triplets = {}".format(epoch, batch_idx, loss.item(), losses[1].item(), losses[2].item(), mined_triplets))
@@ -413,10 +436,16 @@ def metric_train(model, device, dataloaders, optimizer, epoch, args, accuracy_ca
             batch_end = time.time()
             logger.info('forward: {}, backward: {}, total: {}'.format(round(forward_end-batch_st, 4), round(backward_end-forward_end, 4), round(batch_end-batch_st, 4)))
             #logger.info(round(batch_st-loop_st, 4))
+
+            #visualization
+            if args.visual and epoch%args.visual_freq == 0:
+                for name in (set(metainfo[1]) & set(args.visual_train_names)):
+                    visual_save(args.timestamp, epoch, name, visual_embed, metainfo[1].index(name))
         else:
             logger.info("Epoch {} Iteration {}: Mined triplets = 0, continue for next batch".format(epoch, batch_idx))
     sum_embeddings = torch.cat(sum_embeddings)
     sum_labels = torch.cat(sum_labels)
+
     #GPU_info = get_gpu_info()
     #if int(GPU_info[0]['memory.free']) < args.free_memory_required:
     #    save_checkpoint(epoch, model, optimizer, scheduler, args)
@@ -438,9 +467,6 @@ def metric_test(dataloaders, model, accuracy_calculator, args, device, splits, e
     variance_targets = {}
 
     accuracies = {}
-    visual_record = {}
-    for name in args.visual_names:
-        visual_record[name] = {}
     
     #variance
     variance_targets['00-nm'] = []
@@ -458,10 +484,8 @@ def metric_test(dataloaders, model, accuracy_calculator, args, device, splits, e
         variance_targets['00-nm'] += metainfo[1]
 
         if args.visual and epoch%args.visual_freq == 0:
-            for name in (set(metainfo[1]) & set(args.visual_names)):
-                print('record {}'.format(name))
-                for item in visual_embed.keys():
-                    visual_record[name][item] = visual_embed[item][metainfo[1].index(name)]
+            for name in (set(metainfo[1]) & set(args.visual_test_names)):
+                visual_save(args.timestamp, epoch, name, visual_embed, metainfo[1].index(name))
 
     variance_embeddings['00-nm'] = torch.cat(gallery_embeddings)
     variance_labels['00-nm'] = torch.cat(gallery_labels)
@@ -487,11 +511,8 @@ def metric_test(dataloaders, model, accuracy_calculator, args, device, splits, e
                 variance_targets[variance] += metainfo[1]
 
                 if args.visual and epoch%args.visual_freq == 0:
-                    for name in (set(metainfo[1]) & set(args.visual_names)):
-                        print('record {}'.format(name))
-                        for item in visual_embed.keys():
-                            #print(len(visual_embed[item]), len(metainfo[1]))
-                            visual_record[name][item] = visual_embed[item][metainfo[1].index(name)]
+                    for name in (set(metainfo[1]) & set(args.visual_test_names)):
+                        visual_save(args.timestamp, epoch, name, visual_embed, metainfo[1].index(name))
 
             variance_embeddings[variance] = torch.cat(t_embeddings)
             variance_labels[variance] = torch.cat(t_labels)
@@ -550,17 +571,15 @@ def metric_test(dataloaders, model, accuracy_calculator, args, device, splits, e
     #    view_labels = torch.cat([view_labels[name] for name in args.splits_view])
     #    overall, _ = accuracy_calculator.rank_1_accuracy(view_embeddings, view_labels, logger=logger)
     #    accuracies['overall'] = [overall, epoch]
-
-    #save visualization data
-    logger.info(visual_record.keys())
-    if args.visual and epoch%args.visual_freq == 0:
-        for name in visual_record.keys():
-            logger.info('saving {}'.format(name))
-            if not os.path.exists('[{}]/{}'.format(args.timestamp, name)):
-                os.system('mkdir [{}]/{}'.format(args.timestamp, name))
-            for item in visual_embed.keys():
-                np.save('[{}]/{}/{}_{}.npy'.format(args.timestamp, name, epoch, item), visual_record[name][item])
     return accuracies
+
+def visual_save(timestamp, epoch, name, embeds, idx):
+    print('record {}'.format(name))
+    if not os.path.exists('[{}]/{}'.format(timestamp, name)):
+        os.system('mkdir [{}]/{}'.format(timestamp, name))
+    for item in embeds.keys():
+        #print(len(visual_embed[item]), len(metainfo[1]))
+        np.save('[{}]/{}/{}_{}.npy'.format(timestamp, name, epoch, item), embeds[item][idx])
 
 def save_curve(accuracy_val, accuracy_train, losses, args, splits):
     assert len(accuracy_train) == int(args.epochs)

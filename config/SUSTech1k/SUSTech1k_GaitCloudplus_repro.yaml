@@ -1,0 +1,46 @@
+DATA:
+  data_name: SUSTech1K
+  data_root: dataset/SUSTech1K/SUSTech1K-voxel.20tempspat20centcompdilmix2348/tmp
+  frame_size: 20
+  feature: 1
+  temp_feature: 2
+  with_temp: True
+  splits_variance: ['00-nm', '01-nm', 'bg', 'cl', 'cr', 'ub', 'uf', 'oc', 'nt']
+  splits_view: ['000', '045', '090', '135', '180', '225', '270', '315', '000-far', '090-near', '180-far', '270-far']
+  target:
+  structure: GaitCloudplus
+  datatype: half #bf16
+
+  visual: False
+  visual_freq: 20
+  visual_list: {
+        test: ['0223_01-nm_090.npz', '0013_01-bg_090.npz', '0400_01-cl_090.npz', '0400_00-nm_090.npz', '0110_01-cr_090.npz', '0333_01-ub_090.npz', '0400_00-nm_090.npz'],
+        train: ['0301_01-ub_090.npz', '0301_00-nm_090.npz']
+        }
+
+TRAIN:
+  reload_data: True
+  identifier: A_
+  use_gpu: True
+  use_metric: True
+  use_Aloss: True #set to False to use metric learning only
+  train_gpu: [0]
+  workers: 8  # data loader workers
+  batch_size: 8 # batch size for training
+  pair_size: 2
+  batch_size_test: 256
+  base_lr: 0.05
+  epochs: 100
+  start_epoch: 0
+  step_epoch: 30
+  momentum: 0.9
+  weight_decay: 0.0005
+  manual_seed: 7777
+
+  free_memory_required: 1024
+  save_checkpoint: False
+  check_freq: 10
+  load_checkpoint: False #set to False to start a new trial
+  checkpoint_timestamp: '2024-02-02 07:21:51.009417'
+  train_eval: False
+  eval_start: 1.0

@@ -41,4 +41,4 @@ This will start the model training with config files at `config/SUSTech1K/exp_na
 ## Evaluation
 You can check the graphs in the experiment folder which created by the training program, or run `./view_result.py -t 'folder name'` to get a summary.
 
-##  Please contact me at shhhlusi3@gmal.com if you meet any problems.
+##  Please contact me at shhhlusi3@gmail.com if you meet any problems.
